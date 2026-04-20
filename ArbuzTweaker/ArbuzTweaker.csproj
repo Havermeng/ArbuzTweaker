@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\Arbuz.ico</ApplicationIcon>
+    
+    <AssemblyName>ArbuzTweaker</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>ArbuzTweaker</Authors>
+    <Description>Твикер для игр и системы</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Octokit" Version="13.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\Arbuz.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

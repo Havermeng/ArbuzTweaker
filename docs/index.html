@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ArbuzTweaker</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111315;
+      --panel: #1b1f23;
+      --accent: #1cc96b;
+      --text: #eef2f3;
+      --muted: #a9b1b8;
+      --border: #2d333b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: radial-gradient(circle at top, #183322, var(--bg) 45%);
+      color: var(--text);
+    }
+    .wrap {
+      width: min(960px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+    .hero, .panel {
+      background: rgba(27, 31, 35, 0.94);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: clamp(34px, 6vw, 56px);
+      color: var(--accent);
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.6;
+      max-width: 760px;
+    }
+    .downloads {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-top: 24px;
+    }
+    .button {
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+    .button.primary {
+      background: var(--accent);
+      color: #0a1810;
+    }
+    .button.secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+      margin-top: 22px;
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+    }
+    .panel ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .panel p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .stack {
+      display: grid;
+      gap: 18px;
+      margin-top: 22px;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <h1>ArbuzTweaker</h1>
+      <p>Твикер для Windows и Dota 2, сделанный для удобной и понятной настройки производительности через конфиги, параметры запуска и видео настройки.</p>
+      <div class="downloads">
+        <a class="button primary" href="https://github.com/Havermeng/ArbuzTweaker/releases/latest/download/ArbuzTweaker-Setup.exe">Скачать установщик</a>
+        <a class="button secondary" href="https://github.com/Havermeng/ArbuzTweaker/releases/latest/download/ArbuzTweaker-Portable.zip">Скачать zip</a>
+        <a class="button secondary" href="https://github.com/Havermeng/ArbuzTweaker/releases/latest">Все релизы</a>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Что умеет</h2>
+        <ul>
+          <li>редактирует `autoexec.cfg.txt`</li>
+          <li>настраивает `LaunchOptions` в `localconfig.vdf`</li>
+          <li>редактирует `video.txt`</li>
+          <li>проверяет обновления через GitHub</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h2>Установка</h2>
+        <ul>
+          <li>`ArbuzTweaker-Setup.exe` - установка в `%LocalAppData%\Programs\ArbuzTweaker`</li>
+          <li>`ArbuzTweaker-Portable.zip` - запуск без установки после распаковки</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="stack">
+      <article class="panel">
+        <h2>Безопасность</h2>
+        <p>Программа не является читом, не дает игрового преимущества и использует только разрешенные файлы и параметры запуска. Данные пользователя никуда не отправляются и остаются на компьютере.</p>
+      </article>
+      <article class="panel">
+        <h2>Про проект</h2>
+        <p>ArbuzTweaker сделан при помощи вайбкодинга и создан для того, чтобы люди могли легко и понятно повышать производительность своих устройств без ручного редактирования десятков файлов.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
