@@ -9,6 +9,8 @@ public partial class SettingsTab : UserControl
     private readonly AppSettingsService _appSettingsService;
     private readonly UpdateService _updateService;
     private readonly Action _resetWarningChoices;
+    private Label _currentVersionValueLabel = null!;
+    private Label _updateAvailabilityValueLabel = null!;
     private CheckBox _updateCheckBox = null!;
     private Label _statusLabel = null!;
     private bool _isLoadingSettings;
@@ -29,92 +31,163 @@ public partial class SettingsTab : UserControl
     private void InitializeComponent()
     {
         AutoScroll = true;
+        BackColor = UiTheme.Surface;
+
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(20),
+            ColumnCount = 1,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink
+        };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
         var titleLabel = new Label
         {
-            Text = "Настройки",
+            Text = "Настройки твикера",
             Font = new Font("Segoe UI", 14, FontStyle.Bold),
-            Location = new Point(20, 20),
-            AutoSize = true
+            ForeColor = UiTheme.TextPrimary,
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, 18)
         };
 
-        var updatesLabel = new Label
-        {
-            Text = "Обновления",
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            Location = new Point(20, 70),
-            AutoSize = true
-        };
+        var updatesPanel = UiTheme.CreateSectionPanel();
+        var updatesLayout = CreateVerticalSectionLayout();
+        updatesLayout.Controls.Add(UiTheme.CreateSectionTitle("Обновления"));
+
+        var currentVersionRow = CreateKeyValueRow("Текущая версия:", out _currentVersionValueLabel, _updateService.CurrentVersion);
+        var updateAvailabilityRow = CreateKeyValueRow("Доступность обновления:", out _updateAvailabilityValueLabel, "Проверка не выполнялась");
 
         _updateCheckBox = new CheckBox
         {
-            Text = "Проверять обновления при запуске",
-            Location = new Point(20, 100),
+            Text = "Автоматически проверять обновления при запуске",
             AutoSize = true,
-            ForeColor = Color.White
+            ForeColor = UiTheme.TextPrimary,
+            Margin = new Padding(0, 4, 0, 12)
         };
         _updateCheckBox.CheckedChanged += UpdateCheckBox_CheckedChanged;
 
         var checkNowButton = new Button
         {
-            Text = "Проверить обновления",
-            Location = new Point(20, 140),
-            Size = new Size(170, 35)
+            Text = "Проверить",
+            Size = new Size(170, 35),
+            Margin = new Padding(0, 0, 0, 0)
         };
+        UiTheme.StyleActionButton(checkNowButton, true);
         checkNowButton.Click += async (s, e) => await CheckForUpdatesNowAsync();
 
-        var warningsLabel = new Label
+        updatesLayout.Controls.Add(currentVersionRow);
+        updatesLayout.Controls.Add(updateAvailabilityRow);
+        updatesLayout.Controls.Add(_updateCheckBox);
+        updatesLayout.Controls.Add(checkNowButton);
+        updatesPanel.Controls.Add(updatesLayout);
+
+        var warningsPanel = UiTheme.CreateSectionPanel();
+        var warningsLayout = CreateVerticalSectionLayout();
+        warningsLayout.Controls.Add(UiTheme.CreateSectionTitle("Предупреждения"));
+
+        var warningsHint = new Label
         {
-            Text = "Предупреждения",
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            Location = new Point(20, 210),
-            AutoSize = true
+            Text = "Сбрасывает сохранённые подтверждения, после чего предупреждения снова будут показываться как при первом использовании.",
+            MaximumSize = new Size(880, 0),
+            AutoSize = true,
+            ForeColor = UiTheme.TextMuted,
+            Margin = new Padding(0, 0, 0, 12)
         };
 
         var resetWarningsButton = new Button
         {
-            Text = "Сбросить выборы предупреждений",
-            Location = new Point(20, 240),
-            Size = new Size(250, 35)
+            Text = "Сбросить выборы",
+            Size = new Size(180, 35)
         };
+        UiTheme.StyleActionButton(resetWarningsButton);
         resetWarningsButton.Click += ResetWarningsButton_Click;
 
-        var aboutLabel = new Label
-        {
-            Text = "О твикере",
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
-            Location = new Point(20, 310),
-            AutoSize = true
-        };
+        warningsLayout.Controls.Add(warningsHint);
+        warningsLayout.Controls.Add(resetWarningsButton);
+        warningsPanel.Controls.Add(warningsLayout);
+
+        var aboutPanel = UiTheme.CreateSectionPanel();
+        var aboutLayout = CreateVerticalSectionLayout();
+        aboutLayout.Controls.Add(UiTheme.CreateSectionTitle("О твикере"));
 
         var aboutTextLabel = new Label
         {
             Text = "ArbuzTweaker сделан при помощи вайбкодинга и создан для того, чтобы люди могли легко и понятно повышать производительность своих устройств.\n\n" +
-                   "Используемые методы твика в играх безопасные: программа не является читерским ПО, не дает преимущества и использует только разрешенные инструменты Valve через редактирование разрешенных файлов и настройку параметров запуска.\n\n" +
+                   "Используемые методы твика в играх безопасные: программа не является читерским ПО, не даёт преимущества и использует только разрешённые инструменты Valve через редактирование разрешённых файлов и настройку параметров запуска.\n\n" +
                    "Программа не является вирусом. Данные пользователей никуда не передаются и остаются только на компьютере пользователя.",
-            Location = new Point(20, 340),
-            MaximumSize = new Size(820, 0),
+            MaximumSize = new Size(880, 0),
             AutoSize = true,
-            ForeColor = Color.Gainsboro
+            ForeColor = UiTheme.TextMuted,
+            Margin = new Padding(0)
         };
+
+        aboutLayout.Controls.Add(aboutTextLabel);
+        aboutPanel.Controls.Add(aboutLayout);
 
         _statusLabel = new Label
         {
             Text = string.Empty,
-            Location = new Point(20, 510),
             AutoSize = true,
-            ForeColor = Color.Green
+            ForeColor = UiTheme.AccentGreen,
+            Margin = new Padding(0, 6, 0, 0)
         };
 
-        Controls.Add(titleLabel);
-        Controls.Add(updatesLabel);
-        Controls.Add(_updateCheckBox);
-        Controls.Add(checkNowButton);
-        Controls.Add(warningsLabel);
-        Controls.Add(resetWarningsButton);
-        Controls.Add(aboutLabel);
-        Controls.Add(aboutTextLabel);
-        Controls.Add(_statusLabel);
+        root.Controls.Add(titleLabel, 0, 0);
+        root.Controls.Add(updatesPanel, 0, 1);
+        root.Controls.Add(warningsPanel, 0, 2);
+        root.Controls.Add(aboutPanel, 0, 3);
+        root.Controls.Add(_statusLabel, 0, 4);
+
+        Controls.Add(root);
+    }
+
+    private static FlowLayoutPanel CreateVerticalSectionLayout()
+    {
+        return new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            FlowDirection = FlowDirection.TopDown,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+    }
+
+    private static TableLayoutPanel CreateKeyValueRow(string labelText, out Label valueLabel, string valueText)
+    {
+        var row = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, 10),
+            Padding = new Padding(0)
+        };
+        row.ColumnStyles.Add(new ColumnStyle());
+        row.ColumnStyles.Add(new ColumnStyle());
+
+        var label = new Label
+        {
+            Text = labelText,
+            AutoSize = true,
+            ForeColor = UiTheme.TextMuted,
+            Margin = new Padding(0, 0, 12, 0)
+        };
+
+        valueLabel = new Label
+        {
+            Text = valueText,
+            AutoSize = true,
+            ForeColor = UiTheme.TextPrimary,
+            Margin = new Padding(0)
+        };
+
+        row.Controls.Add(label, 0, 0);
+        row.Controls.Add(valueLabel, 1, 0);
+        return row;
     }
 
     private void LoadSettings()
@@ -123,6 +196,11 @@ public partial class SettingsTab : UserControl
         var settings = _appSettingsService.Load();
         _updateCheckBox.Checked = settings.CheckForUpdatesOnStartup;
         _isLoadingSettings = false;
+
+        if (settings.CheckForUpdatesOnStartup)
+            _ = RefreshUpdateAvailabilityAsync(false);
+        else
+            SetUpdateAvailabilityStatus("Автопроверка отключена", UiTheme.TextDim);
     }
 
     private void UpdateCheckBox_CheckedChanged(object? sender, EventArgs e)
@@ -133,21 +211,60 @@ public partial class SettingsTab : UserControl
         var settings = _appSettingsService.Load();
         settings.CheckForUpdatesOnStartup = _updateCheckBox.Checked;
         _appSettingsService.Save(settings);
-        ShowStatus("Настройки сохранены", Color.Green);
+
+        if (_updateCheckBox.Checked)
+            _ = RefreshUpdateAvailabilityAsync(false);
+        else
+            SetUpdateAvailabilityStatus("Автопроверка отключена", UiTheme.TextDim);
+
+        ShowStatus("Настройки сохранены", UiTheme.AccentGreen);
     }
 
     private async Task CheckForUpdatesNowAsync()
     {
+        await RefreshUpdateAvailabilityAsync(true);
+    }
+
+    private void ResetWarningsButton_Click(object? sender, EventArgs e)
+    {
+        var result = MessageBox.Show(
+            "Сбросить все выборы предупреждений? После этого они снова будут показываться как при первом запуске.",
+            "Подтверждение",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (result != DialogResult.Yes)
+            return;
+
+        _resetWarningChoices();
+        ShowStatus("Выборы предупреждений сброшены", UiTheme.AccentGreen);
+    }
+
+    private async Task RefreshUpdateAvailabilityAsync(bool promptDownload)
+    {
+        SetUpdateAvailabilityStatus("Проверка...", UiTheme.TextDim);
+
         var (hasUpdate, newVersion, downloadUrl, assetName) = await _updateService.CheckForUpdateAsync();
         if (!hasUpdate || string.IsNullOrWhiteSpace(downloadUrl))
         {
-            MessageBox.Show(
-                "Новых обновлений нет или релиз пока не опубликован.",
-                "Проверка обновлений",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            SetUpdateAvailabilityStatus("Новых обновлений нет", UiTheme.TextMuted);
+
+            if (promptDownload)
+            {
+                MessageBox.Show(
+                    "Новых обновлений нет или релиз пока не опубликован.",
+                    "Проверка обновлений",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+
             return;
         }
+
+        SetUpdateAvailabilityStatus($"Доступна версия {newVersion}", Color.Orange);
+
+        if (!promptDownload)
+            return;
 
         var result = MessageBox.Show(
             $"Доступна новая версия {newVersion}.\nСкачать обновление?",
@@ -194,19 +311,10 @@ public partial class SettingsTab : UserControl
             MessageBoxIcon.Error);
     }
 
-    private void ResetWarningsButton_Click(object? sender, EventArgs e)
+    private void SetUpdateAvailabilityStatus(string text, Color color)
     {
-        var result = MessageBox.Show(
-            "Сбросить все выборы предупреждений? После этого они снова будут показываться как при первом запуске.",
-            "Подтверждение",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
-
-        if (result != DialogResult.Yes)
-            return;
-
-        _resetWarningChoices();
-        ShowStatus("Выборы предупреждений сброшены", Color.Green);
+        _updateAvailabilityValueLabel.Text = text;
+        _updateAvailabilityValueLabel.ForeColor = color;
     }
 
     private async void ShowStatus(string message, Color color)

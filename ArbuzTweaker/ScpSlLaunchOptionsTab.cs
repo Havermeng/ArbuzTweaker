@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Management;
 using System.Text.RegularExpressions;
@@ -9,71 +8,52 @@ using System.Windows.Forms;
 
 namespace ArbuzTweaker;
 
-public partial class DotaLaunchOptionsTab : UserControl
+public partial class ScpSlLaunchOptionsTab : UserControl
 {
-    private const string HighOption = "-high";
-    private const string NoHltvOption = "-nohltv";
-    private const string NovidOption = "-novid";
-    private const string PrewarmOption = "-map dota -prewarm";
-    private const string ThreadsOptionPrefix = "-threads";
+    private const string NoLogOption = "-nolog";
+    private const string RuOption = "-ru";
+    private const string WindowModeExclusiveOption = "-window-mode exclusive";
+    private const string ScreenFullscreenOption = "-screen-fullscreen";
+    private const string ScreenQualityLowOption = "-screen-quality Low";
+    private const string FDiscordOption = "-fdiscord";
 
-    private readonly ConfigService _configService;
-    private readonly Dota2Service _dota2Service;
-    private readonly string _configFileName = "dota2_launch_options.json";
-    private readonly string _threadsOption;
+    private readonly ScpSlService _scpSlService;
     private TextBox _launchOptionsTextBox = null!;
     private Panel _optionsPanel = null!;
-    private CheckBox _highCheckBox = null!;
-    private CheckBox _noHltvCheckBox = null!;
-    private CheckBox _threadsCheckBox = null!;
-    private CheckBox _novidCheckBox = null!;
-    private CheckBox _prewarmCheckBox = null!;
+    private CheckBox _nologCheckBox = null!;
+    private CheckBox _ruCheckBox = null!;
+    private CheckBox _windowModeCheckBox = null!;
+    private CheckBox _fullscreenCheckBox = null!;
+    private CheckBox _screenQualityCheckBox = null!;
+    private CheckBox _fdiscordCheckBox = null!;
     private Label _pathLabel = null!;
     private Label _statusLabel = null!;
     private bool _pathFound;
-    private bool _includeAutoexecLaunchOption;
-    private bool _isUpdatingLaunchOptionsUi;
+    private bool _isUpdatingUi;
 
-    public DotaLaunchOptionsTab(ConfigService configService, Dota2Service dota2Service)
+    public ScpSlLaunchOptionsTab(ScpSlService scpSlService)
     {
-        _configService = configService;
-        _dota2Service = dota2Service;
-        _threadsOption = $"{ThreadsOptionPrefix} {GetPhysicalCoreCount()}";
+        _scpSlService = scpSlService;
         InitializeComponent();
         LoadStateAsync();
     }
 
     private async void LoadStateAsync()
     {
-        var (dotaPath, _) = await _dota2Service.FindDota2Async();
-        if (dotaPath != null)
+        var (gamePath, _) = await _scpSlService.FindGameAsync();
+        if (gamePath != null)
         {
             _pathFound = true;
-            _pathLabel.Text = $"Dota 2 найдена: {dotaPath}";
+            _pathLabel.Text = $"SCP:SL найдена: {gamePath}";
             _pathLabel.ForeColor = Color.Green;
         }
         else
         {
-            _pathLabel.Text = "Dota 2 не найдена. Можно подготовить параметры локально.";
+            _pathLabel.Text = "SCP:SL не найдена. Можно подготовить параметры локально.";
             _pathLabel.ForeColor = Color.Orange;
         }
 
-        var content = await _configService.LoadConfigAsync(_configFileName);
-        if (!string.IsNullOrWhiteSpace(content))
-        {
-            try
-            {
-                var config = System.Text.Json.JsonSerializer.Deserialize<DotaLaunchOptionsConfigData>(content);
-                if (config != null)
-                {
-                    _includeAutoexecLaunchOption = config.IncludeAutoexecLaunchOption;
-                    SetLaunchOptionsText(BuildLaunchOptionsText(config.EnabledOptions ?? Array.Empty<string>(), _includeAutoexecLaunchOption));
-                }
-            }
-            catch { }
-        }
-
-        var currentLaunchOptions = await _dota2Service.GetCurrentLaunchOptionsAsync();
+        var currentLaunchOptions = await _scpSlService.GetCurrentLaunchOptionsAsync();
         if (!string.IsNullOrWhiteSpace(currentLaunchOptions))
             LoadLaunchOptions(currentLaunchOptions);
     }
@@ -103,7 +83,7 @@ public partial class DotaLaunchOptionsTab : UserControl
 
         var titleLabel = new Label
         {
-            Text = "Dota 2 - Параметры запуска",
+            Text = "SCP:SL - Параметры запуска",
             Font = new Font("Segoe UI", 14, FontStyle.Bold),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 6)
@@ -111,7 +91,7 @@ public partial class DotaLaunchOptionsTab : UserControl
 
         _pathLabel = new Label
         {
-            Text = "Поиск Dota 2...",
+            Text = "Поиск SCP:SL...",
             AutoSize = true,
             ForeColor = Color.Gray,
             Margin = new Padding(0, 0, 0, 12)
@@ -119,7 +99,7 @@ public partial class DotaLaunchOptionsTab : UserControl
 
         var infoLabel = new Label
         {
-            Text = "Эта вкладка читает и меняет строку LaunchOptions в localconfig.vdf. Здесь настраиваются именно параметры запуска Steam, а не autoexec.cfg.txt.",
+            Text = "Эта вкладка читает и меняет строку LaunchOptions для SCP: Secret Laboratory в localconfig.vdf.",
             AutoSize = true,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
@@ -136,7 +116,7 @@ public partial class DotaLaunchOptionsTab : UserControl
 
         var launchOptionsHintLabel = new Label
         {
-            Text = "Здесь отображаются и редактируются команды из LaunchOptions. Каждая команда должна быть с новой строки. +exec autoexec.cfg.txt тоже хранится здесь.",
+            Text = "Каждая строка в окне ниже - отдельная команда запуска для SCP:SL.",
             AutoSize = true,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
@@ -179,8 +159,8 @@ public partial class DotaLaunchOptionsTab : UserControl
             BackColor = Color.FromArgb(35, 35, 35),
             Margin = new Padding(0, 0, 0, 12)
         };
-        _optionsPanel.Resize += (s, e) => PopulateLaunchOptionsPanel();
-        PopulateLaunchOptionsPanel();
+        _optionsPanel.Resize += (s, e) => PopulateOptionsPanel();
+        PopulateOptionsPanel();
 
         var buttonsPanel = new FlowLayoutPanel
         {
@@ -238,50 +218,32 @@ public partial class DotaLaunchOptionsTab : UserControl
             SetLaunchOptionsText(normalizedText);
 
         var selectedOptions = GetSelectedOptionsFromText();
-        await SaveLocalConfigAsync(selectedOptions);
 
         if (!_pathFound)
         {
-            ShowStatus("Сохранено локально. Dota 2 не найдена", Color.Orange);
+            ShowStatus("SCP:SL не найдена", Color.Orange);
             return;
         }
 
-        await ApplyLaunchOptionsAsync(selectedOptions, "Сохранено!", "Сохранено");
+        await ApplyLaunchOptionsAsync(selectedOptions);
     }
 
     private async Task ResetAsync()
     {
         SetLaunchOptionsText(string.Empty);
-        await SaveLocalConfigAsync(Array.Empty<string>());
 
         if (!_pathFound)
         {
-            ShowStatus("Сброшено локально. Dota 2 не найдена", Color.Orange);
+            ShowStatus("SCP:SL не найдена", Color.Orange);
             return;
         }
 
-        await ApplyLaunchOptionsAsync(Array.Empty<string>(), "Параметры запуска сброшены.", "Сброшено");
-    }
-
-    private async Task SaveLocalConfigAsync(IReadOnlyList<string> enabledOptions)
-    {
-        var config = new DotaLaunchOptionsConfigData
-        {
-            EnabledOptions = enabledOptions.ToArray(),
-            IncludeAutoexecLaunchOption = _includeAutoexecLaunchOption,
-            LastModified = DateTime.Now
-        };
-
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            config,
-            new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-
-        await _configService.SaveConfigAsync(_configFileName, json);
+        await ApplyLaunchOptionsAsync(Array.Empty<string>());
     }
 
     private async Task OpenLocalConfigFolderAsync()
     {
-        var configPath = await _dota2Service.GetPrimaryLocalConfigPathAsync();
+        var configPath = await _scpSlService.GetPrimaryLocalConfigPathAsync();
         if (string.IsNullOrWhiteSpace(configPath) || !File.Exists(configPath))
         {
             ShowStatus("Не удалось найти localconfig.vdf", Color.Orange);
@@ -303,24 +265,29 @@ public partial class DotaLaunchOptionsTab : UserControl
         }
     }
 
-    private async Task ApplyLaunchOptionsAsync(
-        IReadOnlyList<string> enabledOptions,
-        string successMessage,
-        string actionLabel)
+    private async Task ApplyLaunchOptionsAsync(IReadOnlyList<string> enabledOptions)
     {
-        var needsLaunchOptionsUpdate = await _dota2Service.NeedsExactLaunchOptionsUpdateAsync(
-            enabledOptions,
-            _includeAutoexecLaunchOption);
+        var managedOptions = new[]
+        {
+            NoLogOption,
+            RuOption,
+            WindowModeExclusiveOption,
+            ScreenFullscreenOption,
+            ScreenQualityLowOption,
+            FDiscordOption
+        };
+
+        var needsUpdate = await _scpSlService.NeedsLaunchOptionsUpdateAsync(enabledOptions, managedOptions);
 
         bool steamWasRunning = false;
         bool steamClosed = false;
 
-        if (needsLaunchOptionsUpdate && _dota2Service.IsSteamRunning())
+        if (needsUpdate && _scpSlService.IsSteamRunning())
         {
             steamWasRunning = true;
 
             var closeSteamResult = MessageBox.Show(
-                "Steam сейчас запущен. Чтобы параметры запуска сразу отобразились в Steam и не были перезаписаны, лучше закрыть его перед применением.\n\nЗакрыть Steam сейчас?",
+                "Steam сейчас запущен. Чтобы параметры запуска SCP:SL сразу отобразились в Steam и не были перезаписаны, лучше закрыть его перед применением.\n\nЗакрыть Steam сейчас?",
                 "Steam запущен",
                 MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Warning);
@@ -330,7 +297,7 @@ public partial class DotaLaunchOptionsTab : UserControl
 
             if (closeSteamResult == DialogResult.Yes)
             {
-                steamClosed = await _dota2Service.CloseSteamAsync();
+                steamClosed = await _scpSlService.CloseSteamAsync();
                 if (!steamClosed)
                 {
                     ShowStatus("Не удалось закрыть Steam", Color.Orange);
@@ -339,12 +306,9 @@ public partial class DotaLaunchOptionsTab : UserControl
             }
         }
 
-        if (needsLaunchOptionsUpdate)
+        if (needsUpdate)
         {
-            var applyResult = await _dota2Service.SetExactLaunchOptionsAsync(
-                enabledOptions,
-                _includeAutoexecLaunchOption);
-
+            var applyResult = await _scpSlService.SetLaunchOptionsAsync(enabledOptions, managedOptions);
             if (!applyResult.IsSuccess)
             {
                 ShowStatus(applyResult.Message, Color.Orange);
@@ -354,31 +318,31 @@ public partial class DotaLaunchOptionsTab : UserControl
 
         if (steamClosed)
         {
-            if (_dota2Service.StartSteam())
-                ShowStatus($"{actionLabel}. Steam перезапущен", Color.Green);
+            if (_scpSlService.StartSteam())
+                ShowStatus("Сохранено. Steam перезапущен", Color.Green);
             else
-                ShowStatus($"{actionLabel}. Не удалось запустить Steam", Color.Orange);
+                ShowStatus("Сохранено. Не удалось запустить Steam", Color.Orange);
 
             return;
         }
 
         if (steamWasRunning)
         {
-            ShowStatus($"{actionLabel}. Перезапусти Steam", Color.Orange);
+            ShowStatus("Сохранено. Перезапусти Steam", Color.Orange);
             return;
         }
 
-        ShowStatus(successMessage, Color.Green);
+        ShowStatus("Параметры запуска сохранены", Color.Green);
     }
 
-    private void PopulateLaunchOptionsPanel()
+    private void PopulateOptionsPanel()
     {
         if (_optionsPanel == null || _launchOptionsTextBox == null)
             return;
 
         var selectedOptions = new HashSet<string>(GetSelectedOptionsFromText(), StringComparer.OrdinalIgnoreCase);
-        var preserveState = _isUpdatingLaunchOptionsUi;
-        _isUpdatingLaunchOptionsUi = true;
+        var preserveState = _isUpdatingUi;
+        _isUpdatingUi = true;
 
         _optionsPanel.SuspendLayout();
         _optionsPanel.Controls.Clear();
@@ -389,27 +353,18 @@ public partial class DotaLaunchOptionsTab : UserControl
         var descriptionX = 18 + checkBoxWidth + 18;
         var descriptionWidth = Math.Max(260, availableWidth - checkBoxWidth - 26);
 
-        AddLaunchOptionRow(_optionsPanel, ref y, ref _highCheckBox, HighOption, "Выставляет высокий приоритет процесса Dota 2.", selectedOptions.Contains(HighOption), checkBoxWidth, descriptionX, descriptionWidth, HighCheckBox_CheckedChanged);
-        AddLaunchOptionRow(_optionsPanel, ref y, ref _noHltvCheckBox, NoHltvOption, "Отключает компоненты HLTV/GOTV, если они не используются.", selectedOptions.Contains(NoHltvOption), checkBoxWidth, descriptionX, descriptionWidth, NoHltvCheckBox_CheckedChanged);
-        AddLaunchOptionRow(_optionsPanel, ref y, ref _threadsCheckBox, _threadsOption, "Автоматически подставляет количество физических ядер процессора в параметр -threads.", selectedOptions.Any(IsThreadsOption), checkBoxWidth, descriptionX, descriptionWidth, ThreadsCheckBox_CheckedChanged);
-        AddLaunchOptionRow(_optionsPanel, ref y, ref _novidCheckBox, NovidOption, "Отключает вступительный ролик при запуске игры.", selectedOptions.Contains(NovidOption), checkBoxWidth, descriptionX, descriptionWidth, NovidCheckBox_CheckedChanged);
-        AddLaunchOptionRow(_optionsPanel, ref y, ref _prewarmCheckBox, PrewarmOption, "Предзагружает игровые ресурсы; может уменьшить проблемы при загрузке в матч.", selectedOptions.Contains(PrewarmOption), checkBoxWidth, descriptionX, descriptionWidth, PrewarmCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref _nologCheckBox, NoLogOption, "Отключает запись логов игры.", selectedOptions.Contains(NoLogOption), checkBoxWidth, descriptionX, descriptionWidth, NoLogCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref _ruCheckBox, RuOption, "Иногда помогает при ошибках подключения к центральным серверам.", selectedOptions.Contains(RuOption), checkBoxWidth, descriptionX, descriptionWidth, RuCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref _windowModeCheckBox, WindowModeExclusiveOption, "Включает эксклюзивный полноэкранный режим окна.", selectedOptions.Contains(WindowModeExclusiveOption), checkBoxWidth, descriptionX, descriptionWidth, WindowModeCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref _fullscreenCheckBox, ScreenFullscreenOption, "Запускает игру в полноэкранном режиме.", selectedOptions.Contains(ScreenFullscreenOption), checkBoxWidth, descriptionX, descriptionWidth, FullscreenCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref _screenQualityCheckBox, ScreenQualityLowOption, "Ставит низкое качество изображения через launch options.", selectedOptions.Contains(ScreenQualityLowOption), checkBoxWidth, descriptionX, descriptionWidth, ScreenQualityCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref _fdiscordCheckBox, FDiscordOption, "Включает авторизацию в игре через Discord.", selectedOptions.Contains(FDiscordOption), checkBoxWidth, descriptionX, descriptionWidth, FDiscordCheckBox_CheckedChanged);
 
         _optionsPanel.ResumeLayout();
-        _isUpdatingLaunchOptionsUi = preserveState;
+        _isUpdatingUi = preserveState;
     }
 
-    private static void AddLaunchOptionRow(
-        Panel panel,
-        ref int y,
-        ref CheckBox field,
-        string optionText,
-        string description,
-        bool isChecked,
-        int checkBoxWidth,
-        int descriptionX,
-        int descriptionWidth,
-        EventHandler handler)
+    private void AddOptionRow(ref int y, ref CheckBox field, string optionText, string description, bool isChecked, int checkBoxWidth, int descriptionX, int descriptionWidth, EventHandler handler)
     {
         field = new CheckBox
         {
@@ -443,54 +398,62 @@ public partial class DotaLaunchOptionsTab : UserControl
             BackColor = Color.Transparent
         };
 
-        panel.Controls.Add(field);
-        panel.Controls.Add(descriptionLabel);
+        _optionsPanel.Controls.Add(field);
+        _optionsPanel.Controls.Add(descriptionLabel);
         y += Math.Max(field.Height, descriptionLabel.Height) + 12;
     }
 
-    private void HighCheckBox_CheckedChanged(object? sender, EventArgs e)
+    private void NoLogCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingLaunchOptionsUi)
+        if (_isUpdatingUi)
             return;
 
-        SetOptionLine(HighOption, _highCheckBox.Checked);
+        SetOptionLine(NoLogOption, _nologCheckBox.Checked);
     }
 
-    private void NoHltvCheckBox_CheckedChanged(object? sender, EventArgs e)
+    private void RuCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingLaunchOptionsUi)
+        if (_isUpdatingUi)
             return;
 
-        SetOptionLine(NoHltvOption, _noHltvCheckBox.Checked);
+        SetOptionLine(RuOption, _ruCheckBox.Checked);
     }
 
-    private void ThreadsCheckBox_CheckedChanged(object? sender, EventArgs e)
+    private void WindowModeCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingLaunchOptionsUi)
+        if (_isUpdatingUi)
             return;
 
-        SetThreadsOption(_threadsCheckBox.Checked);
+        SetOptionLine(WindowModeExclusiveOption, _windowModeCheckBox.Checked);
     }
 
-    private void NovidCheckBox_CheckedChanged(object? sender, EventArgs e)
+    private void FullscreenCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingLaunchOptionsUi)
+        if (_isUpdatingUi)
             return;
 
-        SetOptionLine(NovidOption, _novidCheckBox.Checked);
+        SetOptionLine(ScreenFullscreenOption, _fullscreenCheckBox.Checked);
     }
 
-    private void PrewarmCheckBox_CheckedChanged(object? sender, EventArgs e)
+    private void ScreenQualityCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingLaunchOptionsUi)
+        if (_isUpdatingUi)
             return;
 
-        SetOptionLine(PrewarmOption, _prewarmCheckBox.Checked);
+        SetOptionLine(ScreenQualityLowOption, _screenQualityCheckBox.Checked);
+    }
+
+    private void FDiscordCheckBox_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (_isUpdatingUi)
+            return;
+
+        SetOptionLine(FDiscordOption, _fdiscordCheckBox.Checked);
     }
 
     private void LaunchOptionsTextBox_TextChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingLaunchOptionsUi)
+        if (_isUpdatingUi)
             return;
 
         UpdateSelectionFromText();
@@ -504,47 +467,27 @@ public partial class DotaLaunchOptionsTab : UserControl
         if (enabled)
             options.Insert(0, option);
 
-        SetLaunchOptionsText(BuildLaunchOptionsText(options, _includeAutoexecLaunchOption));
-    }
-
-    private void SetThreadsOption(bool enabled)
-    {
-        var options = GetSelectedOptionsFromText().ToList();
-        options.RemoveAll(IsThreadsOption);
-
-        if (enabled)
-            options.Insert(0, _threadsOption);
-
-        SetLaunchOptionsText(BuildLaunchOptionsText(options, _includeAutoexecLaunchOption));
+        SetLaunchOptionsText(BuildLaunchOptionsText(options));
     }
 
     private void LoadLaunchOptions(string launchOptions)
     {
-        _includeAutoexecLaunchOption = ContainsPhrase(launchOptions, Dota2Service.AutoexecLaunchCommand);
-        var remainingOptions = RemovePhrase(launchOptions, Dota2Service.AutoexecLaunchCommand);
-        SetLaunchOptionsText(remainingOptions);
+        SetLaunchOptionsText(launchOptions);
     }
 
     private void SetLaunchOptionsText(string text)
     {
         var normalizedText = NormalizeLaunchOptionsText(text);
 
-        _isUpdatingLaunchOptionsUi = true;
+        _isUpdatingUi = true;
         _launchOptionsTextBox.Text = normalizedText;
         UpdateSelectionFromText();
-        _isUpdatingLaunchOptionsUi = false;
+        _isUpdatingUi = false;
     }
 
     private void UpdateSelectionFromText()
     {
-        var lines = new HashSet<string>(GetSelectedOptionsFromText(), StringComparer.OrdinalIgnoreCase);
-        _isUpdatingLaunchOptionsUi = true;
-        _highCheckBox.Checked = lines.Contains(HighOption);
-        _noHltvCheckBox.Checked = lines.Contains(NoHltvOption);
-        _threadsCheckBox.Checked = lines.Any(IsThreadsOption);
-        _novidCheckBox.Checked = lines.Contains(NovidOption);
-        _prewarmCheckBox.Checked = lines.Contains(PrewarmOption);
-        _isUpdatingLaunchOptionsUi = false;
+        PopulateOptionsPanel();
     }
 
     private List<string> GetSelectedOptionsFromText()
@@ -552,12 +495,9 @@ public partial class DotaLaunchOptionsTab : UserControl
         return ParseLaunchOptionsText(_launchOptionsTextBox.Text);
     }
 
-    private string BuildLaunchOptionsText(IEnumerable<string> options, bool includeAutoexec)
+    private string BuildLaunchOptionsText(IEnumerable<string> options)
     {
         var lines = new List<string>();
-
-        if (includeAutoexec)
-            lines.Add(Dota2Service.AutoexecLaunchCommand);
 
         foreach (var option in options)
         {
@@ -574,7 +514,7 @@ public partial class DotaLaunchOptionsTab : UserControl
 
     private string NormalizeLaunchOptionsText(string text)
     {
-        return BuildLaunchOptionsText(ParseLaunchOptionsText(text), _includeAutoexecLaunchOption);
+        return BuildLaunchOptionsText(ParseLaunchOptionsText(text));
     }
 
     private List<string> ParseLaunchOptionsText(string text)
@@ -588,18 +528,11 @@ public partial class DotaLaunchOptionsTab : UserControl
             if (string.IsNullOrWhiteSpace(line))
                 continue;
 
-            if (ContainsPhrase(line, Dota2Service.AutoexecLaunchCommand))
-                line = RemovePhrase(line, Dota2Service.AutoexecLaunchCommand);
-
-            line = NormalizeWhitespace(line);
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            line = ExtractKnownOption(line, PrewarmOption, result, seen);
-            line = ExtractKnownOption(line, HighOption, result, seen);
-            line = ExtractKnownOption(line, NoHltvOption, result, seen);
-            line = ExtractKnownOption(line, NovidOption, result, seen);
-            line = ExtractThreadsOption(line, result, seen);
+            line = ExtractKnownOption(line, WindowModeExclusiveOption, result, seen);
+            line = ExtractKnownOption(line, ScreenQualityLowOption, result, seen);
+            line = ExtractKnownOption(line, NoLogOption, result, seen);
+            line = ExtractKnownOption(line, ScreenFullscreenOption, result, seen);
+            line = ExtractKnownOption(line, FDiscordOption, result, seen);
 
             line = NormalizeWhitespace(line);
             if (!string.IsNullOrWhiteSpace(line) && seen.Add(line))
@@ -620,81 +553,30 @@ public partial class DotaLaunchOptionsTab : UserControl
         return RemovePhrase(line, option);
     }
 
-    private string ExtractThreadsOption(string line, List<string> result, HashSet<string> seen)
-    {
-        var match = Regex.Match(line, $@"(?<!\S){Regex.Escape(ThreadsOptionPrefix)}\s+\d+(?!\S)", RegexOptions.IgnoreCase);
-        if (!match.Success)
-            return line;
-
-        if (seen.Add(_threadsOption))
-            result.Add(_threadsOption);
-
-        return Regex.Replace(line, $@"(?<!\S){Regex.Escape(ThreadsOptionPrefix)}\s+\d+(?!\S)", string.Empty, RegexOptions.IgnoreCase);
-    }
-
     private static bool ContainsPhrase(string text, string phrase)
     {
-        return Regex.IsMatch(
-            text,
-            $@"(?<!\S){Regex.Escape(phrase)}(?!\S)",
-            RegexOptions.IgnoreCase);
+        return Regex.IsMatch(text, $@"(?<!\S){Regex.Escape(phrase)}(?!\S)", RegexOptions.IgnoreCase);
     }
 
     private static string RemovePhrase(string text, string phrase)
     {
-        return Regex.Replace(
-            text,
-            $@"(?<!\S){Regex.Escape(phrase)}(?!\S)",
-            string.Empty,
-            RegexOptions.IgnoreCase);
+        return Regex.Replace(text, $@"(?<!\S){Regex.Escape(phrase)}(?!\S)", string.Empty, RegexOptions.IgnoreCase);
     }
 
     private static string NormalizeWhitespace(string text)
     {
-        return string.Join(
-            " ",
-            text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return string.Join(" ", text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
     private void ShowHelpDialog()
     {
         MessageBox.Show(
-            "Эта вкладка работает с LaunchOptions внутри localconfig.vdf.\n\n" +
+            "Эта вкладка работает с LaunchOptions внутри localconfig.vdf для SCP: Secret Laboratory.\n\n" +
             "Большое окно показывает реальные параметры запуска из файла. Каждая строка в этом окне - отдельная команда запуска.\n\n" +
-            "Галочки -high, -nohltv, -threads, -novid и -map dota -prewarm просто добавляют или убирают соответствующие строки в этом окне. Для -threads твикер автоматически подставляет количество физических ядер процессора. После нажатия на 'Применить' твикер записывает содержимое окна обратно в localconfig.vdf.",
+            "Готовые пункты ниже просто добавляют или убирают стандартные строки в этом окне. После нажатия на 'Применить' твикер записывает содержимое окна обратно в localconfig.vdf.",
             "Как это работает?",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
-    }
-
-    private static bool IsThreadsOption(string option)
-    {
-        return Regex.IsMatch(option, $@"^{Regex.Escape(ThreadsOptionPrefix)}\s+\d+$", RegexOptions.IgnoreCase);
-    }
-
-    private static int GetPhysicalCoreCount()
-    {
-        try
-        {
-            using var searcher = new ManagementObjectSearcher("select NumberOfCores from Win32_Processor");
-            var totalCores = 0;
-
-            foreach (ManagementObject processor in searcher.Get())
-            {
-                if (processor["NumberOfCores"] is uint cores)
-                    totalCores += (int)cores;
-                else if (processor["NumberOfCores"] is int intCores)
-                    totalCores += intCores;
-            }
-
-            if (totalCores > 0)
-                return totalCores;
-        }
-        catch
-        {
-        }
-
-        return Math.Max(1, Environment.ProcessorCount);
     }
 
     private async void ShowStatus(string message, Color color)
@@ -704,13 +586,4 @@ public partial class DotaLaunchOptionsTab : UserControl
         await Task.Delay(2000);
         _statusLabel.Text = string.Empty;
     }
-}
-
-public class DotaLaunchOptionsConfigData
-{
-    public string[] EnabledOptions { get; set; } = Array.Empty<string>();
-
-    public bool IncludeAutoexecLaunchOption { get; set; }
-
-    public DateTime LastModified { get; set; }
 }

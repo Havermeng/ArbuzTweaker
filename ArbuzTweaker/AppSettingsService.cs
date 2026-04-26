@@ -54,4 +54,9 @@ public sealed class AppSettingsService
 public sealed class AppSettingsData
 {
     public bool CheckForUpdatesOnStartup { get; set; } = true;
+    public int WindowLeft { get; set; }
+    public int WindowTop { get; set; }
+    public int WindowWidth { get; set; }
+    public int WindowHeight { get; set; }
+    public bool WindowMaximized { get; set; }
 }

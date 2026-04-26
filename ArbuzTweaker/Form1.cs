@@ -3,8 +3,14 @@ namespace ArbuzTweaker;
 public partial class Form1 : Form
 {
     private const string DotaWarningConsentFileName = "dota-warning-consent.flag";
+    private const int ExpandedSidebarWidth = 250;
+    private const int CompactSidebarWidth = 214;
+    private const int SidebarButtonHeight = 44;
+    private const int SidebarButtonGap = 8;
     private readonly ConfigService _configService;
     private readonly AppSettingsService _appSettingsService;
+    private readonly NvidiaInspectorService _nvidiaInspectorService;
+    private readonly MsiAfterburnerService _msiAfterburnerService;
     private readonly UpdateService _updateService;
     private readonly Dota2Service _dota2Service;
     private Panel _sidebarPanel = null!;
@@ -17,6 +23,8 @@ public partial class Form1 : Form
         _configService = new ConfigService();
         _configService.EnsureDirectoriesExist();
         _appSettingsService = new AppSettingsService(_configService);
+        _nvidiaInspectorService = new NvidiaInspectorService(_configService);
+        _msiAfterburnerService = new MsiAfterburnerService();
         _dotaWarningShown = LoadDotaWarningConsent();
 
         var version = GetType().Assembly.GetName().Version?.ToString() ?? "1.0.0";
@@ -33,27 +41,30 @@ public partial class Form1 : Form
     private void InitializeComponents()
     {
         Text = "ArbuzTweaker";
-        Size = new Size(1100, 760);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        Size = GetDefaultWindowSize();
+        MinimumSize = new Size(980, 680);
         StartPosition = FormStartPosition.CenterScreen;
         ShowInTaskbar = true;
         ShowIcon = true;
-        BackColor = Color.FromArgb(30, 30, 30);
-        ForeColor = Color.White;
+        BackColor = UiTheme.WindowBackground;
+        ForeColor = UiTheme.TextPrimary;
         Font = new Font("Segoe UI", 10);
 
         var titlePanel = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 50,
-            BackColor = Color.FromArgb(20, 20, 20)
+            Height = 52,
+            BackColor = UiTheme.SurfaceAlt,
+            Padding = new Padding(16, 0, 16, 0)
         };
 
         var titleLabel = new Label
         {
             Text = "ArbuzTweaker",
             Font = new Font("Segoe UI", 16, FontStyle.Bold),
-            ForeColor = Color.FromArgb(0, 200, 100),
-            Location = new Point(15, 10),
+            ForeColor = UiTheme.AccentGreen,
+            Location = new Point(16, 10),
             AutoSize = true
         };
 
@@ -61,22 +72,31 @@ public partial class Form1 : Form
         {
             Text = "v1.0.0",
             Font = new Font("Segoe UI", 9),
-            ForeColor = Color.Gray,
-            Location = new Point(150, 15),
+            ForeColor = UiTheme.TextDim,
+            Location = new Point(192, 16),
             AutoSize = true
         };
 
         _sidebarPanel = new Panel
         {
             Dock = DockStyle.Left,
-            Width = 180,
-            BackColor = Color.FromArgb(25, 25, 25)
+            Width = ExpandedSidebarWidth,
+            BackColor = UiTheme.SurfaceAlt,
+            Padding = new Padding(10, 14, 10, 14)
         };
 
         _contentPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(35, 35, 35)
+            BackColor = UiTheme.Border,
+            Padding = new Padding(1)
+        };
+
+        var sidebarDivider = new Panel
+        {
+            Dock = DockStyle.Left,
+            Width = 1,
+            BackColor = UiTheme.Border
         };
 
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Arbuz.ico");
@@ -88,14 +108,92 @@ public partial class Form1 : Form
         titlePanel.Controls.Add(titleLabel);
         titlePanel.Controls.Add(_versionLabel);
         Controls.Add(_contentPanel);
+        Controls.Add(sidebarDivider);
         Controls.Add(_sidebarPanel);
         Controls.Add(titlePanel);
+
+        Resize += (s, e) => UpdateWindowModeLayout();
+        FormClosing += (s, e) => SaveWindowPlacement();
+        RestoreWindowPlacement();
+        UpdateWindowModeLayout();
+    }
+
+    private static Size GetDefaultWindowSize()
+    {
+        var workingArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
+        var width = Math.Min(1180, Math.Max(980, workingArea.Width - 120));
+        var height = Math.Min(780, Math.Max(680, workingArea.Height - 120));
+        return new Size(width, height);
+    }
+
+    private void RestoreWindowPlacement()
+    {
+        var settings = _appSettingsService.Load();
+        if (settings.WindowWidth < MinimumSize.Width || settings.WindowHeight < MinimumSize.Height)
+            return;
+
+        var bounds = new Rectangle(settings.WindowLeft, settings.WindowTop, settings.WindowWidth, settings.WindowHeight);
+        if (!IsVisibleOnAnyScreen(bounds))
+            return;
+
+        StartPosition = FormStartPosition.Manual;
+        Bounds = bounds;
+        if (settings.WindowMaximized)
+            WindowState = FormWindowState.Maximized;
+    }
+
+    private void SaveWindowPlacement()
+    {
+        var settings = _appSettingsService.Load();
+        var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+
+        settings.WindowLeft = bounds.Left;
+        settings.WindowTop = bounds.Top;
+        settings.WindowWidth = bounds.Width;
+        settings.WindowHeight = bounds.Height;
+        settings.WindowMaximized = WindowState == FormWindowState.Maximized;
+        _appSettingsService.Save(settings);
+    }
+
+    private static bool IsVisibleOnAnyScreen(Rectangle bounds)
+    {
+        return Screen.AllScreens.Any(screen => Rectangle.Intersect(screen.WorkingArea, bounds).Width >= 240
+            && Rectangle.Intersect(screen.WorkingArea, bounds).Height >= 160);
+    }
+
+    private void UpdateWindowModeLayout()
+    {
+        if (_sidebarPanel == null)
+            return;
+
+        _sidebarPanel.Width = ClientSize.Width < 1120 ? CompactSidebarWidth : ExpandedSidebarWidth;
+        LayoutSidebarButtons();
+    }
+
+    private void LayoutSidebarButtons()
+    {
+        if (_sidebarPanel == null)
+            return;
+
+        var buttonWidth = Math.Max(160, _sidebarPanel.ClientSize.Width - 22);
+        var index = 0;
+        foreach (Control control in _sidebarPanel.Controls)
+        {
+            if (control is not Button button)
+                continue;
+
+            button.Location = new Point(10, 14 + index * (SidebarButtonHeight + SidebarButtonGap));
+            button.Size = new Size(buttonWidth, SidebarButtonHeight);
+            index++;
+        }
     }
 
     private void LoadTabs()
     {
         AddTab("Windows", new WindowsTweaksTab());
         AddTab("Dota 2", new DotaTab(_configService, _dota2Service));
+        AddTab("SCP:SL", new ScpSlTab());
+        AddTab("Стороннее ПО", new ThirdPartyToolsTab(_nvidiaInspectorService, _msiAfterburnerService));
         AddTab("Настройки", new SettingsTab(_appSettingsService, _updateService, ResetWarningChoices));
     }
 
@@ -171,23 +269,20 @@ public partial class Form1 : Form
     {
         _tabs[name] = tabControl;
 
-        int buttonHeight = 40;
-        int startY = 20 + (_sidebarPanel.Controls.Count * (buttonHeight + 5));
+        int startY = 14 + (_sidebarPanel.Controls.Count * (SidebarButtonHeight + SidebarButtonGap));
 
         var button = new Button
         {
             Text = name,
             Location = new Point(10, startY),
-            Size = new Size(160, buttonHeight),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = _sidebarPanel.Controls.Count == 0 ? Color.FromArgb(0, 150, 100) : Color.FromArgb(45, 45, 45),
-            ForeColor = Color.White,
+            Size = new Size(Math.Max(160, _sidebarPanel.ClientSize.Width - 22), SidebarButtonHeight),
             Tag = name
         };
-        button.FlatAppearance.BorderSize = 0;
+        UiTheme.StyleSidebarButton(button, _sidebarPanel.Controls.Count == 0);
         button.Click += TabButton_Click;
 
         _sidebarPanel.Controls.Add(button);
+        LayoutSidebarButtons();
 
         if (_sidebarPanel.Controls.Count == 1)
         {
@@ -205,9 +300,9 @@ public partial class Form1 : Form
             foreach (Control c in _sidebarPanel.Controls)
             {
                 if (c is Button b)
-                    b.BackColor = Color.FromArgb(45, 45, 45);
+                    UiTheme.StyleSidebarButton(b, false);
             }
-            btn.BackColor = Color.FromArgb(0, 150, 100);
+            UiTheme.StyleSidebarButton(btn, true);
             ShowTab(name);
         }
     }
@@ -218,6 +313,7 @@ public partial class Form1 : Form
         if (_tabs.TryGetValue(name, out var tab))
         {
             tab.Dock = DockStyle.Fill;
+            tab.BackColor = UiTheme.Surface;
             _contentPanel.Controls.Add(tab);
         }
     }

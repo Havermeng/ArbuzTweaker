@@ -16,6 +16,8 @@ public class UpdateService
     private readonly string _currentVersion;
     private readonly string _downloadPath;
 
+    public string CurrentVersion => _currentVersion;
+
     public UpdateService(string currentVersion)
     {
         _currentVersion = currentVersion;

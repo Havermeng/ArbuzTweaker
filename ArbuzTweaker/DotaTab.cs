@@ -23,7 +23,7 @@ public partial class DotaTab : UserControl
                 new ConfigCommandDefinition("mat_picmip 2", "Снижает качество текстур."),
                 new ConfigCommandDefinition("mat_vsync 0", "Отключает вертикальную синхронизацию."),
                 new ConfigCommandDefinition("mat_triplebuffered 0", "Отключает тройную буферизацию."),
-                new ConfigCommandDefinition("r_deferrer 0", "Параметр deferred-рендера; в части сборок может не давать эффекта."),
+                new ConfigCommandDefinition("r_deferrer 0", "Отключает часть deferred-рендера; эффект зависит от текущей версии клиента."),
                 new ConfigCommandDefinition("r_deferred_additive_pass 0", "Отключает часть additive-эффектов deferred-рендера."),
                 new ConfigCommandDefinition("r_deferred_height_fog 0", "Отключает height fog в deferred-рендере."),
                 new ConfigCommandDefinition("r_deferred_specular 0", "Отключает specular-эффекты deferred-рендера."),
@@ -54,10 +54,10 @@ public partial class DotaTab : UserControl
             {
                 new ConfigCommandDefinition("cl_interp 0.01", "Задает минимальное значение интерполяции клиента."),
                 new ConfigCommandDefinition("cl_lagcompensation 1", "Включает серверную компенсацию задержки."),
-                new ConfigCommandDefinition("cl_pred_optimize 2", "Включает более агрессивную оптимизацию предсказания клиента."),
+                new ConfigCommandDefinition("cl_pred_optimize 2", "Включает более агрессивную оптимизацию клиентского предсказания сети."),
                 new ConfigCommandDefinition("cl_smooth 1", "Включает сглаживание обзора после ошибок предсказания клиента."),
-                new ConfigCommandDefinition("cl_smoothtime 0.01", "Задает время сглаживания после ошибок предсказания клиента."),
-                new ConfigCommandDefinition("cl_spectator_cmdrate_factor 0.5", "Задает множитель cmdrate для режима наблюдателя.")
+                new ConfigCommandDefinition("cl_smoothtime 0.01", "Задает длительность сглаживания после ошибок предсказания клиента."),
+                new ConfigCommandDefinition("cl_spectator_cmdrate_factor 0.5", "Меняет частоту сетевых обновлений в режиме наблюдателя.")
             }),
         new(
             "Отключение мусора",
@@ -66,8 +66,8 @@ public partial class DotaTab : UserControl
                 new ConfigCommandDefinition("dota_ambient_creatures 0", "Отключает фоновых существ на карте."),
                 new ConfigCommandDefinition("dota_ambient_cloth 0", "Отключает анимацию ткани и похожих элементов."),
                 new ConfigCommandDefinition("dota_embers 0", "Отключает частицы ember-эффекта в меню."),
-                new ConfigCommandDefinition("+map_enable_portrait_worlds 0", "Убирает портреты и постеры, которые могут влиять на FPS. Важно: модели персонажей в главном меню пропадут."),
-                new ConfigCommandDefinition("dota_portrait_animate 0", "Отключает анимацию портрета героя."),
+                new ConfigCommandDefinition("+map_enable_portrait_worlds 0", "Отключает 3D-постеры и portrait worlds в главном меню. Это не управляет параметром setting.dota_portrait_animate из video.txt."),
+                new ConfigCommandDefinition("dota_portrait_animate 0", "Отключает анимацию портрета героя через autoexec. Может пересекаться с setting.dota_portrait_animate в video.txt."),
                 new ConfigCommandDefinition("r_dota_fxaa 1", "Включает FXAA-сглаживание."),
                 new ConfigCommandDefinition("r_ssao 0", "Отключает SSAO."),
                 new ConfigCommandDefinition("r_dota_allow_wind_on_trees 0", "Отключает анимацию ветра на деревьях."),
@@ -79,7 +79,7 @@ public partial class DotaTab : UserControl
             "Остальное",
             new[]
             {
-                new ConfigCommandDefinition("engine_no_focus_sleep 0", "Отключает паузу движка без фокуса; может помочь при просадках FPS после сворачивания игры."),
+                new ConfigCommandDefinition("engine_no_focus_sleep 0", "Не дает игре замедляться при потере фокуса; может помочь после сворачивания окна."),
                 new ConfigCommandDefinition("joystick 0", "Отключает поддержку джойстика."),
                 new ConfigCommandDefinition("snd_disable_mixer_duck 1", "Отключает автоматическое приглушение звука."),
                 new ConfigCommandDefinition("developer 1", "Включает расширенный вывод отладочных сообщений."),
@@ -90,6 +90,16 @@ public partial class DotaTab : UserControl
     private static readonly ConfigCommandDefinition[] AllCommandDefinitions = CommandGroups
         .SelectMany(group => group.Commands)
         .ToArray();
+
+    private static readonly HashSet<string> NetworkSensitiveCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cl_interp 0.01",
+        "cl_lagcompensation 1",
+        "cl_pred_optimize 2",
+        "cl_smooth 1",
+        "cl_smoothtime 0.01",
+        "cl_spectator_cmdrate_factor 0.5"
+    };
 
     private static readonly string[] LegacyManagedLaunchOptions = { "-console", "-novid" };
 
@@ -107,6 +117,7 @@ public partial class DotaTab : UserControl
     private Label _pathLabel = null!;
     private bool _pathFound;
     private bool _isUpdatingAutoexecUi;
+    private string _lastSavedAutoexecText = string.Empty;
 
     public DotaTab(ConfigService configService, Dota2Service dota2Service)
     {
@@ -146,7 +157,7 @@ public partial class DotaTab : UserControl
             Text = "Конфиг",
             BackColor = Color.FromArgb(35, 35, 35),
             ForeColor = Color.White,
-            AutoScroll = true
+            AutoScroll = false
         };
 
         var launchOptionsPage = new TabPage
@@ -175,140 +186,168 @@ public partial class DotaTab : UserControl
         };
         videoConfigPage.Controls.Add(videoConfigControl);
 
+        var configLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(20),
+            ColumnCount = 1,
+            RowCount = 10
+        };
+        configLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 40F));
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 60F));
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle());
+
         var titleLabel = new Label
         {
             Text = "Dota 2 - Твики и конфиг",
             Font = new Font("Segoe UI", 14, FontStyle.Bold),
-            Location = new Point(20, 20),
-            AutoSize = true
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, 6)
         };
 
         _pathLabel = new Label
         {
             Text = "Поиск Dota 2...",
-            Location = new Point(20, 50),
             AutoSize = true,
-            ForeColor = Color.Gray
+            ForeColor = Color.Gray,
+            Margin = new Padding(0, 0, 0, 12)
         };
 
         var configLabel = new Label
         {
             Text = $"Конфиг {Dota2Service.AutoexecFileName}:",
-            Location = new Point(20, 85),
             AutoSize = true,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 4)
         };
 
         var configHintLabel = new Label
         {
             Text = $"Здесь отображается и редактируется содержимое файла {Dota2Service.AutoexecFileName}. Отмеченные команды ниже тоже добавляются сюда.",
-            Location = new Point(20, 108),
             AutoSize = true,
-            ForeColor = Color.Gainsboro
+            ForeColor = Color.Gainsboro,
+            MaximumSize = new Size(980, 0),
+            Margin = new Padding(0, 0, 0, 10)
         };
 
         _autoexecTextBox = new TextBox
         {
-            Location = new Point(20, 135),
-            Size = new Size(860, 170),
+            Dock = DockStyle.Fill,
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 10)
+            Font = new Font("Consolas", 10),
+            MinimumSize = new Size(0, 220),
+            Margin = new Padding(0, 0, 0, 12)
         };
         _autoexecTextBox.TextChanged += AutoexecTextBox_TextChanged;
 
         var commandLabel = new Label
         {
             Text = "Готовые команды:",
-            Location = new Point(20, 320),
             AutoSize = true,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 4)
         };
 
         var commandHintLabel = new Label
         {
             Text = $"Эти галочки добавляют или убирают строки в {Dota2Service.AutoexecFileName}.",
-            Location = new Point(20, 343),
             AutoSize = true,
-            ForeColor = Color.Gainsboro
+            ForeColor = Color.Gainsboro,
+            MaximumSize = new Size(980, 0),
+            Margin = new Padding(0, 0, 0, 10)
         };
 
         _commandPanel = new Panel
         {
-            Location = new Point(20, 370),
-            Size = new Size(860, 300),
+            Dock = DockStyle.Fill,
             AutoScroll = true,
             BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.FromArgb(35, 35, 35)
+            BackColor = Color.FromArgb(35, 35, 35),
+            Margin = new Padding(0, 0, 0, 12)
         };
+        _commandPanel.Resize += (s, e) => PopulateCommandPanel();
         PopulateCommandPanel();
 
-        _saveButton = new Button
+        var buttonsPanel = new FlowLayoutPanel
         {
-            Text = "Применить",
-            Location = new Point(20, 685),
-            Size = new Size(120, 35)
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 0, 0, 10)
         };
+
+        _saveButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
         _saveButton.Click += async (s, e) => await SaveConfigAsync();
 
-        _helpButton = new Button
-        {
-            Text = "Как это работает?",
-            Location = new Point(150, 685),
-            Size = new Size(160, 35)
-        };
+        _helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
         _helpButton.Click += (s, e) => ShowHelpDialog();
 
-        _openAutoexecButton = new Button
-        {
-            Text = $"Показать {Dota2Service.AutoexecFileName} в папке",
-            Location = new Point(320, 685),
-            Size = new Size(220, 35)
-        };
+        _openAutoexecButton = new Button { Text = $"Показать {Dota2Service.AutoexecFileName} в папке", Size = new Size(220, 35), Margin = new Padding(0, 0, 10, 0) };
         _openAutoexecButton.Click += async (s, e) => await OpenAutoexecFolderAsync();
 
-        _resetButton = new Button
-        {
-            Text = "Сбросить",
-            Location = new Point(550, 685),
-            Size = new Size(120, 35)
-        };
+        _resetButton = new Button { Text = "Сбросить", Size = new Size(120, 35), Margin = new Padding(0) };
         _resetButton.Click += async (s, e) => await ResetConfigAsync();
+
+        buttonsPanel.Controls.Add(_saveButton);
+        buttonsPanel.Controls.Add(_helpButton);
+        buttonsPanel.Controls.Add(_openAutoexecButton);
+        buttonsPanel.Controls.Add(_resetButton);
 
         _statusLabel = new Label
         {
             Text = string.Empty,
-            Location = new Point(20, 730),
             AutoSize = true,
-            ForeColor = Color.Green
+            ForeColor = Color.Green,
+            Margin = new Padding(0)
         };
 
-        configPage.Controls.Add(titleLabel);
-        configPage.Controls.Add(_pathLabel);
-        configPage.Controls.Add(configLabel);
-        configPage.Controls.Add(configHintLabel);
-        configPage.Controls.Add(_autoexecTextBox);
-        configPage.Controls.Add(commandLabel);
-        configPage.Controls.Add(commandHintLabel);
-        configPage.Controls.Add(_commandPanel);
-        configPage.Controls.Add(_saveButton);
-        configPage.Controls.Add(_helpButton);
-        configPage.Controls.Add(_openAutoexecButton);
-        configPage.Controls.Add(_resetButton);
-        configPage.Controls.Add(_statusLabel);
+        configLayout.Controls.Add(titleLabel, 0, 0);
+        configLayout.Controls.Add(_pathLabel, 0, 1);
+        configLayout.Controls.Add(configLabel, 0, 2);
+        configLayout.Controls.Add(configHintLabel, 0, 3);
+        configLayout.Controls.Add(_autoexecTextBox, 0, 4);
+        configLayout.Controls.Add(commandLabel, 0, 5);
+        configLayout.Controls.Add(commandHintLabel, 0, 6);
+        configLayout.Controls.Add(_commandPanel, 0, 7);
+        configLayout.Controls.Add(buttonsPanel, 0, 8);
+        configLayout.Controls.Add(_statusLabel, 0, 9);
 
-        tabControl.TabPages.Add(configPage);
+        configPage.Controls.Add(configLayout);
+
         tabControl.TabPages.Add(launchOptionsPage);
+        tabControl.TabPages.Add(configPage);
         tabControl.TabPages.Add(videoConfigPage);
         Controls.Add(tabControl);
     }
 
     private void PopulateCommandPanel()
     {
+        if (_commandPanel == null || _autoexecTextBox == null)
+            return;
+
+        var preserveState = _isUpdatingAutoexecUi;
+        _isUpdatingAutoexecUi = true;
+
+        _commandPanel.SuspendLayout();
+        _commandPanel.Controls.Clear();
+        _commandCheckBoxes.Clear();
+
         var y = 10;
-        const int checkBoxWidth = 280;
-        const int descriptionX = 300;
-        const int descriptionWidth = 480;
+        var selectedCommands = new HashSet<string>(GetAutoexecLines(), StringComparer.OrdinalIgnoreCase);
+        var availableWidth = Math.Max(620, _commandPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 28);
+        var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.40), 240, 360);
+        var descriptionX = 18 + checkBoxWidth + 18;
+        var descriptionWidth = Math.Max(220, availableWidth - checkBoxWidth - 26);
 
         foreach (var group in CommandGroups)
         {
@@ -328,38 +367,48 @@ public partial class DotaTab : UserControl
                 var checkBox = new CheckBox
                 {
                     Text = command.Command,
-                    Location = new Point(10, y),
+                    Location = new Point(18, y),
                     Size = new Size(checkBoxWidth, 24),
                     AutoSize = false,
                     ForeColor = Color.White,
                     Tag = command.Command,
-                    BackColor = Color.Transparent
+                    BackColor = Color.Transparent,
+                    Checked = selectedCommands.Contains(command.Command)
                 };
                 checkBox.CheckedChanged += CommandCheckBox_CheckedChanged;
+
+                var descriptionFont = new Font("Segoe UI", 10);
+                var descriptionSize = TextRenderer.MeasureText(
+                    command.Description,
+                    descriptionFont,
+                    new Size(descriptionWidth, int.MaxValue),
+                    TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
 
                 var descriptionLabel = new Label
                 {
                     Text = command.Description,
                     Location = new Point(descriptionX, y + 2),
-                    Size = new Size(descriptionWidth, 34),
+                    Size = new Size(descriptionWidth, Math.Max(28, descriptionSize.Height + 8)),
                     AutoSize = false,
                     UseMnemonic = false,
                     TextAlign = ContentAlignment.TopLeft,
+                    Font = descriptionFont,
                     ForeColor = Color.Gainsboro,
                     BackColor = Color.Transparent
                 };
-                var preferredSize = descriptionLabel.GetPreferredSize(new Size(descriptionWidth, 0));
-                descriptionLabel.Size = new Size(descriptionWidth, Math.Max(34, preferredSize.Height + 16));
 
                 _commandCheckBoxes[command.Command] = checkBox;
                 _commandPanel.Controls.Add(checkBox);
                 _commandPanel.Controls.Add(descriptionLabel);
 
-                y += Math.Max(checkBox.Height, descriptionLabel.Height) + 16;
+                y += Math.Max(checkBox.Height, descriptionLabel.Height) + 12;
             }
 
             y += 6;
         }
+
+        _commandPanel.ResumeLayout();
+        _isUpdatingAutoexecUi = preserveState;
     }
 
     private async Task LoadConfigAsync()
@@ -383,6 +432,8 @@ public partial class DotaTab : UserControl
         var currentAutoexec = await _dota2Service.LoadAutoexecAsync();
         if (currentAutoexec != null && (!string.IsNullOrWhiteSpace(currentAutoexec) || string.IsNullOrWhiteSpace(storedText)))
             SetAutoexecText(currentAutoexec);
+
+        _lastSavedAutoexecText = NormalizeAutoexecText(_autoexecTextBox.Text);
     }
 
     private async Task SaveConfigAsync()
@@ -391,8 +442,12 @@ public partial class DotaTab : UserControl
         if (!string.Equals(_autoexecTextBox.Text, normalizedAutoexecText, StringComparison.Ordinal))
             SetAutoexecText(normalizedAutoexecText);
 
+        if (HasNetworkSensitiveChanges(_lastSavedAutoexecText, normalizedAutoexecText) && !ConfirmNetworkSensitiveChange())
+            return;
+
         var selectedCommands = GetSelectedConfigCommands();
         await SaveStoredConfigAsync(selectedCommands, normalizedAutoexecText);
+        _lastSavedAutoexecText = normalizedAutoexecText;
 
         if (!_pathFound)
         {
@@ -423,8 +478,12 @@ public partial class DotaTab : UserControl
         if (confirmResult != DialogResult.Yes)
             return;
 
+        if (HasNetworkSensitiveChanges(_lastSavedAutoexecText, string.Empty) && !ConfirmNetworkSensitiveChange())
+            return;
+
         SetAutoexecText(string.Empty);
         await SaveStoredConfigAsync(Array.Empty<string>(), string.Empty);
+        _lastSavedAutoexecText = string.Empty;
 
         if (!_pathFound)
         {
@@ -712,6 +771,37 @@ public partial class DotaTab : UserControl
             "Как это работает?",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
+    }
+
+    private bool HasNetworkSensitiveChanges(string oldText, string newText)
+    {
+        var oldCommands = ExtractNetworkSensitiveCommands(oldText);
+        var newCommands = ExtractNetworkSensitiveCommands(newText);
+
+        return !oldCommands.SetEquals(newCommands);
+    }
+
+    private HashSet<string> ExtractNetworkSensitiveCommands(string text)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var rawLine in text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+        {
+            var normalizedLine = NormalizeConfigLine(rawLine);
+            if (NetworkSensitiveCommands.Contains(normalizedLine))
+                result.Add(normalizedLine);
+        }
+
+        return result;
+    }
+
+    private static bool ConfirmNetworkSensitiveChange()
+    {
+        return MessageBox.Show(
+            "Изменение этого параметра может негативно сказаться на интернет соединении! ПРОДОЛЖИТЬ?",
+            "Предупреждение",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) == DialogResult.Yes;
     }
 
     private async void ShowStatus(string message, Color color)

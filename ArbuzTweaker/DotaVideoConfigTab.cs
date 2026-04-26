@@ -12,6 +12,7 @@ public partial class DotaVideoConfigTab : UserControl
 {
     private static readonly VideoSettingDefinition[] SettingDefinitions =
     {
+        new("setting.dota_portrait_animate", "false", "true", false, "Отключает анимацию портрета героя. Без галочки значение возвращается в true."),
         new("setting.cpu_level", "3", "2", false, "При галочке ставит значение 3, без галочки возвращает 2."),
         new("setting.mem_level", "3", "2", false, "При галочке ставит значение 3, без галочки возвращает 2."),
         new("setting.gpu_mem_level", "3", "2", false, "При галочке ставит значение 3, без галочки возвращает 2."),
@@ -58,153 +59,134 @@ public partial class DotaVideoConfigTab : UserControl
 
     private void InitializeComponent()
     {
+        AutoScroll = false;
+
+        var rootLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(20),
+            ColumnCount = 1,
+            RowCount = 10
+        };
+        rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 40F));
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 60F));
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle());
+
         var titleLabel = new Label
         {
             Text = "Dota 2 - Видео конфиг",
             Font = new Font("Segoe UI", 14, FontStyle.Bold),
-            Location = new Point(20, 20),
-            AutoSize = true
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, 6)
         };
 
         _pathLabel = new Label
         {
             Text = "Поиск video.txt...",
-            Location = new Point(20, 50),
             AutoSize = true,
-            ForeColor = Color.Gray
+            ForeColor = Color.Gray,
+            Margin = new Padding(0, 0, 0, 12)
         };
 
         var infoLabel = new Label
         {
             Text = "Эта вкладка читает и меняет файл video.txt. Одни галочки переключают уже существующие значения, а другие добавляют в файл недостающие строки.",
-            Location = new Point(20, 90),
             AutoSize = true,
-            ForeColor = Color.Gainsboro
+            ForeColor = Color.Gainsboro,
+            MaximumSize = new Size(980, 0),
+            Margin = new Padding(0, 0, 0, 12)
         };
 
         var videoLabel = new Label
         {
             Text = "Содержимое video.txt:",
-            Location = new Point(20, 125),
             AutoSize = true,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 4)
         };
 
         _videoTextBox = new TextBox
         {
-            Location = new Point(20, 150),
-            Size = new Size(740, 160),
+            Dock = DockStyle.Fill,
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 10)
+            Font = new Font("Consolas", 10),
+            MinimumSize = new Size(0, 210),
+            Margin = new Padding(0, 0, 0, 12)
         };
         _videoTextBox.TextChanged += VideoTextBox_TextChanged;
 
         var settingsLabel = new Label
         {
             Text = "Быстрые переключатели:",
-            Location = new Point(20, 325),
             AutoSize = true,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold)
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 8)
         };
 
         _settingsPanel = new Panel
         {
-            Location = new Point(20, 355),
-            Size = new Size(860, 170),
+            Dock = DockStyle.Fill,
             AutoScroll = true,
             BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.FromArgb(35, 35, 35)
+            BackColor = Color.FromArgb(35, 35, 35),
+            Margin = new Padding(0, 0, 0, 12)
+        };
+        _settingsPanel.Resize += (s, e) => PopulateSettingsPanel();
+        PopulateSettingsPanel();
+
+        var buttonsPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 0, 0, 10)
         };
 
-        var y = 10;
-        const int checkBoxWidth = 250;
-        const int descriptionX = 285;
-        const int descriptionWidth = 500;
-        foreach (var definition in SettingDefinitions)
-        {
-            var checkBox = new CheckBox
-            {
-                Text = definition.Key,
-                Location = new Point(20, y),
-                Size = new Size(checkBoxWidth, 24),
-                AutoSize = false,
-                ForeColor = Color.White,
-                Tag = definition.Key
-            };
-            checkBox.CheckedChanged += SettingCheckBox_CheckedChanged;
-
-            var descriptionLabel = new Label
-            {
-                Text = definition.Description,
-                Location = new Point(descriptionX, y + 2),
-                Size = new Size(descriptionWidth, 34),
-                AutoSize = false,
-                UseMnemonic = false,
-                TextAlign = ContentAlignment.TopLeft,
-                ForeColor = Color.Gainsboro
-            };
-            var preferredSize = descriptionLabel.GetPreferredSize(new Size(descriptionWidth, 0));
-            descriptionLabel.Size = new Size(descriptionWidth, Math.Max(34, preferredSize.Height + 16));
-
-            _settingCheckBoxes[definition.Key] = checkBox;
-            _settingsPanel.Controls.Add(checkBox);
-            _settingsPanel.Controls.Add(descriptionLabel);
-            y += Math.Max(checkBox.Height, descriptionLabel.Height) + 16;
-        }
-
-        var applyButton = new Button
-        {
-            Text = "Применить",
-            Location = new Point(20, 540),
-            Size = new Size(120, 35)
-        };
+        var applyButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
         applyButton.Click += async (s, e) => await SaveAndApplyAsync();
 
-        var helpButton = new Button
-        {
-            Text = "Как это работает?",
-            Location = new Point(150, 540),
-            Size = new Size(160, 35)
-        };
+        var helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
         helpButton.Click += (s, e) => ShowHelpDialog();
 
-        var openFolderButton = new Button
-        {
-            Text = "Показать video.txt в папке",
-            Location = new Point(320, 540),
-            Size = new Size(210, 35)
-        };
+        var openFolderButton = new Button { Text = "Показать video.txt", Size = new Size(210, 35), Margin = new Padding(0, 0, 10, 0) };
         openFolderButton.Click += async (s, e) => await OpenVideoConfigFolderAsync();
 
-        var resetButton = new Button
-        {
-            Text = "Сбросить",
-            Location = new Point(540, 540),
-            Size = new Size(120, 35)
-        };
+        var resetButton = new Button { Text = "Сбросить", Size = new Size(120, 35), Margin = new Padding(0) };
         resetButton.Click += async (s, e) => await ResetAsync();
+
+        buttonsPanel.Controls.Add(applyButton);
+        buttonsPanel.Controls.Add(helpButton);
+        buttonsPanel.Controls.Add(openFolderButton);
+        buttonsPanel.Controls.Add(resetButton);
 
         _statusLabel = new Label
         {
             Text = string.Empty,
-            Location = new Point(20, 590),
             AutoSize = true,
-            ForeColor = Color.Green
+            ForeColor = Color.Green,
+            Margin = new Padding(0)
         };
 
-        Controls.Add(titleLabel);
-        Controls.Add(_pathLabel);
-        Controls.Add(infoLabel);
-        Controls.Add(videoLabel);
-        Controls.Add(_videoTextBox);
-        Controls.Add(settingsLabel);
-        Controls.Add(_settingsPanel);
-        Controls.Add(applyButton);
-        Controls.Add(helpButton);
-        Controls.Add(openFolderButton);
-        Controls.Add(resetButton);
-        Controls.Add(_statusLabel);
+        rootLayout.Controls.Add(titleLabel, 0, 0);
+        rootLayout.Controls.Add(_pathLabel, 0, 1);
+        rootLayout.Controls.Add(infoLabel, 0, 2);
+        rootLayout.Controls.Add(videoLabel, 0, 3);
+        rootLayout.Controls.Add(_videoTextBox, 0, 4);
+        rootLayout.Controls.Add(settingsLabel, 0, 5);
+        rootLayout.Controls.Add(_settingsPanel, 0, 6);
+        rootLayout.Controls.Add(buttonsPanel, 0, 7);
+        rootLayout.Controls.Add(_statusLabel, 0, 8);
+
+        Controls.Add(rootLayout);
     }
 
     private async Task SaveAndApplyAsync()
@@ -263,6 +245,69 @@ public partial class DotaVideoConfigTab : UserControl
         {
             ShowStatus("Не удалось открыть папку с video.txt", Color.Orange);
         }
+    }
+
+    private void PopulateSettingsPanel()
+    {
+        if (_settingsPanel == null || _videoTextBox == null)
+            return;
+
+        var preserveState = _isUpdatingVideoUi;
+        _isUpdatingVideoUi = true;
+
+        _settingsPanel.SuspendLayout();
+        _settingsPanel.Controls.Clear();
+        _settingCheckBoxes.Clear();
+
+        var y = 12;
+        var availableWidth = Math.Max(620, _settingsPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 28);
+        var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.38), 240, 360);
+        var descriptionX = 18 + checkBoxWidth + 18;
+        var descriptionWidth = Math.Max(220, availableWidth - checkBoxWidth - 26);
+
+        foreach (var definition in SettingDefinitions)
+        {
+            var checkBox = new CheckBox
+            {
+                Text = definition.Key,
+                Location = new Point(18, y),
+                Size = new Size(checkBoxWidth, 24),
+                AutoSize = false,
+                ForeColor = Color.White,
+                Tag = definition.Key,
+                BackColor = Color.Transparent,
+                Checked = definition.IsEnabled(GetSettingValue(definition.Key))
+            };
+            checkBox.CheckedChanged += SettingCheckBox_CheckedChanged;
+
+            var descriptionFont = new Font("Segoe UI", 10);
+            var descriptionSize = TextRenderer.MeasureText(
+                definition.Description,
+                descriptionFont,
+                new Size(descriptionWidth, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
+
+            var descriptionLabel = new Label
+            {
+                Text = definition.Description,
+                Location = new Point(descriptionX, y + 2),
+                Size = new Size(descriptionWidth, Math.Max(28, descriptionSize.Height + 8)),
+                AutoSize = false,
+                UseMnemonic = false,
+                TextAlign = ContentAlignment.TopLeft,
+                Font = descriptionFont,
+                ForeColor = Color.Gainsboro,
+                BackColor = Color.Transparent
+            };
+
+            _settingCheckBoxes[definition.Key] = checkBox;
+            _settingsPanel.Controls.Add(checkBox);
+            _settingsPanel.Controls.Add(descriptionLabel);
+            y += Math.Max(checkBox.Height, descriptionLabel.Height) + 12;
+        }
+
+        _settingsPanel.ResumeLayout();
+        _isUpdatingVideoUi = preserveState;
     }
 
     private async Task ResetAsync()

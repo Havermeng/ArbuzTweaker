@@ -569,30 +569,39 @@ public class Dota2Service
         {
             var content = File.ReadAllText(configPath);
             var lines = content.Split('\n');
+            bool inAppsSection = false;
             bool inDotaSection = false;
             int braceCount = 0;
 
             foreach (var line in lines)
             {
-                if (line.Trim().StartsWith("\"570\""))
+                if (!inAppsSection && string.Equals(line.Trim(), "\"apps\"", StringComparison.Ordinal))
                 {
-                    inDotaSection = true;
+                    inAppsSection = true;
                     braceCount = 0;
+                    continue;
                 }
 
-                if (inDotaSection)
+                if (inAppsSection)
                 {
                     braceCount += line.Count(c => c == '{') - line.Count(c => c == '}');
 
-                    if (line.Contains("\"LaunchOptions\""))
+                    if (!inDotaSection && string.Equals(line.Trim(), "\"570\"", StringComparison.Ordinal))
+                    {
+                        inDotaSection = true;
+                        continue;
+                    }
+
+                    if (inDotaSection && line.Contains("\"LaunchOptions\""))
                     {
                         return ExtractQuotedValue(line, "LaunchOptions");
                     }
 
+                    if (inDotaSection && braceCount == 1 && line.Trim() == "}")
+                        inDotaSection = false;
+
                     if (braceCount == 0 && line.Trim() == "}")
-                    {
-                        break;
-                    }
+                        inAppsSection = false;
                 }
             }
         }
@@ -633,20 +642,7 @@ public class Dota2Service
 
     private List<string> GetLocalConfigPaths(string steamPath)
     {
-        var result = new List<string>();
-        var userDataPath = Path.Combine(steamPath, "userdata");
-
-        if (!Directory.Exists(userDataPath))
-            return result;
-
-        foreach (var userPath in Directory.GetDirectories(userDataPath))
-        {
-            var configPath = Path.Combine(userPath, "config", "localconfig.vdf");
-            if (File.Exists(configPath))
-                result.Add(configPath);
-        }
-
-        return result;
+        return SteamUserResolver.GetTargetLocalConfigPaths(steamPath);
     }
 
     private string? GetPrimarySteamUserPath()
@@ -655,21 +651,7 @@ public class Dota2Service
         if (string.IsNullOrWhiteSpace(steamPath))
             return null;
 
-        var configPaths = GetLocalConfigPaths(steamPath);
-        if (configPaths.Count > 0)
-        {
-            var configDirectory = Path.GetDirectoryName(configPaths[0]);
-            var userDirectory = configDirectory == null ? null : Directory.GetParent(configDirectory);
-            if (userDirectory != null)
-                return userDirectory.FullName;
-        }
-
-        var userDataPath = Path.Combine(steamPath, "userdata");
-        if (!Directory.Exists(userDataPath))
-            return null;
-
-        var userDirectories = Directory.GetDirectories(userDataPath);
-        return userDirectories.Length == 0 ? null : userDirectories[0];
+        return SteamUserResolver.GetPrimarySteamUserPath(steamPath);
     }
 
     private static List<string> NormalizeOptionList(IEnumerable<string> options)
@@ -761,56 +743,57 @@ public class Dota2Service
         try
         {
             var content = File.ReadAllText(configPath);
-            
-            if (content.Contains("\"570\""))
+
+            if (!content.Contains("\"apps\"") || !content.Contains("\"570\""))
+                return false;
+
+            var lines = content.Split('\n');
+            var result = new List<string>();
+            bool inAppsSection = false;
+            bool inDotaSection = false;
+            bool updated = false;
+            int braceCount = 0;
+
+            foreach (var line in lines)
             {
-                var lines = content.Split('\n');
-                var result = new List<string>();
-                bool inDotaSection = false;
-                bool updated = false;
-                int braceCount = 0;
+                string newLine = line;
 
-                foreach (var line in lines)
+                if (!inAppsSection && string.Equals(line.Trim(), "\"apps\"", StringComparison.Ordinal))
                 {
-                    string newLine = line;
-                    
-                    if (line.Trim().StartsWith("\"570\""))
-                    {
-                        inDotaSection = true;
-                        braceCount = 0;
-                    }
-                    
-                    if (inDotaSection)
-                    {
-                        braceCount += line.Count(c => c == '{') - line.Count(c => c == '}');
-                        
-                        if (line.Contains("\"LaunchOptions\""))
-                        {
-                            newLine = ReplaceQuotedValue(line, "LaunchOptions", options);
-                            updated = true;
-                        }
-
-                        if (braceCount == 0 && line.Trim() == "}" && !updated)
-                        {
-                            inDotaSection = false;
-                        }
-                        else if (braceCount == 0 && line.Trim() == "}")
-                        {
-                            inDotaSection = false;
-                        }
-                    }
-
-                    result.Add(newLine);
+                    inAppsSection = true;
+                    braceCount = 0;
                 }
 
-                if (!updated)
-                    return false;
+                if (inAppsSection)
+                {
+                    braceCount += line.Count(c => c == '{') - line.Count(c => c == '}');
 
-                File.WriteAllText(configPath, string.Join("\n", result));
-                return true;
+                    if (!inDotaSection && string.Equals(line.Trim(), "\"570\"", StringComparison.Ordinal))
+                    {
+                        inDotaSection = true;
+                    }
+
+                    if (inDotaSection && line.Contains("\"LaunchOptions\""))
+                    {
+                        newLine = ReplaceQuotedValue(line, "LaunchOptions", options);
+                        updated = true;
+                    }
+
+                    if (inDotaSection && braceCount == 1 && line.Trim() == "}")
+                        inDotaSection = false;
+
+                    if (braceCount == 0 && line.Trim() == "}")
+                        inAppsSection = false;
+                }
+
+                result.Add(newLine);
             }
 
-            return false;
+            if (!updated)
+                return false;
+
+            File.WriteAllText(configPath, string.Join("\n", result));
+            return true;
         }
         catch
         {
