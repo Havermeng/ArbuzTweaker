@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace ArbuzTweaker;
@@ -12,12 +8,26 @@ public sealed class ScpSlService
 {
     private const string AppId = "700330";
 
+    private readonly FileBackupService? _fileBackupService;
+    private readonly AppLogService? _logService;
     private string? _gamePath;
     private string? _steamPath;
+
+    public ScpSlService()
+    {
+    }
+
+    public ScpSlService(FileBackupService fileBackupService, AppLogService logService)
+    {
+        _fileBackupService = fileBackupService;
+        _logService = logService;
+    }
 
     public string? GamePath => _gamePath;
 
     public string? SteamPath => _steamPath;
+
+    public string? PreferredSteamAccountId32 { get; set; }
 
     public async Task<(string? gamePath, string? steamPath)> FindGameAsync()
     {
@@ -60,7 +70,9 @@ public sealed class ScpSlService
                     if (!process.HasExited)
                         process.CloseMainWindow();
                 }
-                catch { }
+                catch
+                {
+                }
             }
 
             if (WaitForSteamToFullyExit(12000))
@@ -74,7 +86,9 @@ public sealed class ScpSlService
                     if (!process.HasExited)
                         process.Kill(true);
                 }
-                catch { }
+                catch
+                {
+                }
             }
 
             return WaitForSteamToFullyExit(15000);
@@ -119,6 +133,17 @@ public sealed class ScpSlService
         }
     }
 
+    public async Task<IReadOnlyList<SteamUserInfo>> GetSteamUsersAsync()
+    {
+        return await Task.Run(() =>
+        {
+            var steamPath = GetSteamPathFromRegistry();
+            return string.IsNullOrWhiteSpace(steamPath)
+                ? Array.Empty<SteamUserInfo>()
+                : SteamUserResolver.GetSteamUsers(steamPath).ToArray();
+        });
+    }
+
     public async Task<string?> GetPrimaryLocalConfigPathAsync()
     {
         return await Task.Run(() =>
@@ -156,15 +181,15 @@ public sealed class ScpSlService
                         return existingOptions;
                 }
             }
-            catch { }
+            catch
+            {
+            }
 
             return null;
         });
     }
 
-    public async Task<bool> NeedsLaunchOptionsUpdateAsync(
-        IEnumerable<string> selectedOptions,
-        IEnumerable<string> managedOptions)
+    public async Task<bool> NeedsExactLaunchOptionsUpdateAsync(IEnumerable<string> selectedOptions)
     {
         return await Task.Run(() =>
         {
@@ -178,27 +203,24 @@ public sealed class ScpSlService
                 if (configPaths.Count == 0)
                     return false;
 
-                var selectedOptionList = NormalizeOptionList(selectedOptions);
-                var managedOptionList = NormalizeOptionList(managedOptions);
+                var exactOptions = BuildExactLaunchOptions(NormalizeOptionList(selectedOptions));
 
                 foreach (var configPath in configPaths)
                 {
                     var existingOptions = GetExistingLaunchOptions(configPath);
-                    var desiredOptions = BuildLaunchOptions(selectedOptionList, existingOptions, managedOptionList);
-
-                    if (!LaunchOptionsEqual(existingOptions, desiredOptions))
+                    if (!LaunchOptionsEqual(existingOptions, exactOptions))
                         return true;
                 }
             }
-            catch { }
+            catch
+            {
+            }
 
             return false;
         });
     }
 
-    public async Task<ScpLaunchOptionsApplyResult> SetLaunchOptionsAsync(
-        IEnumerable<string> selectedOptions,
-        IEnumerable<string> managedOptions)
+    public async Task<ScpLaunchOptionsApplyResult> SetExactLaunchOptionsAsync(IEnumerable<string> selectedOptions)
     {
         return await Task.Run(() =>
         {
@@ -212,83 +234,24 @@ public sealed class ScpSlService
                 if (configPaths.Count == 0)
                     return ScpLaunchOptionsApplyResult.Failure("Не найден ни один localconfig.vdf.");
 
-                var selectedOptionList = NormalizeOptionList(selectedOptions);
-                var managedOptionList = NormalizeOptionList(managedOptions);
+                var exactOptions = BuildExactLaunchOptions(NormalizeOptionList(selectedOptions));
                 var updatedFiles = 0;
-                string appliedOptions = string.Empty;
 
                 foreach (var configPath in configPaths)
                 {
-                    var existingOptions = GetExistingLaunchOptions(configPath);
-                    var optionsToApply = BuildLaunchOptions(selectedOptionList, existingOptions, managedOptionList);
-
-                    if (UpdateLocalConfig(configPath, optionsToApply))
-                    {
+                    if (UpdateLocalConfig(configPath, exactOptions))
                         updatedFiles++;
-                        appliedOptions = optionsToApply;
-                    }
                 }
 
                 if (updatedFiles == 0)
-                    return ScpLaunchOptionsApplyResult.Failure("Не удалось обновить LaunchOptions.");
+                    return ScpLaunchOptionsApplyResult.Failure("Не удалось обновить LaunchOptions для SCP:SL.");
 
-                return ScpLaunchOptionsApplyResult.Success(appliedOptions, updatedFiles);
+                return ScpLaunchOptionsApplyResult.Success(exactOptions, updatedFiles);
             }
-            catch
+            catch (Exception ex)
             {
+                _logService?.Error("Failed to update SCP:SL launch options.", ex);
                 return ScpLaunchOptionsApplyResult.Failure("Ошибка при обновлении параметров запуска.");
-            }
-        });
-    }
-
-    public async Task<string?> GetBootConfigPathAsync()
-    {
-        var (gamePath, _) = await FindGameAsync();
-        if (string.IsNullOrWhiteSpace(gamePath))
-            return null;
-
-        return Path.Combine(gamePath, "SCPSL_Data", "boot.config");
-    }
-
-    public async Task<string?> LoadBootConfigAsync()
-    {
-        return await Task.Run(async () =>
-        {
-            try
-            {
-                var path = await GetBootConfigPathAsync();
-                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                    return null;
-
-                return File.ReadAllText(path);
-            }
-            catch
-            {
-                return null;
-            }
-        });
-    }
-
-    public async Task<bool> SaveBootConfigAsync(string content)
-    {
-        return await Task.Run(async () =>
-        {
-            try
-            {
-                var path = await GetBootConfigPathAsync();
-                if (string.IsNullOrWhiteSpace(path))
-                    return false;
-
-                var directory = Path.GetDirectoryName(path);
-                if (!string.IsNullOrWhiteSpace(directory))
-                    Directory.CreateDirectory(directory);
-
-                File.WriteAllText(path, content);
-                return true;
-            }
-            catch
-            {
-                return false;
             }
         });
     }
@@ -310,8 +273,9 @@ public sealed class ScpSlService
                 var path = GetCommandBindingsPath();
                 return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
             }
-            catch
+            catch (Exception ex)
             {
+                _logService?.Error("Failed to load SCP:SL command bindings.", ex);
                 return null;
             }
         });
@@ -328,11 +292,14 @@ public sealed class ScpSlService
                 if (!string.IsNullOrWhiteSpace(directory))
                     Directory.CreateDirectory(directory);
 
+                _fileBackupService?.BackupFile(path, "SCP SL cmdbinding.txt");
                 File.WriteAllText(path, content);
+                _logService?.Info($"SCP:SL command bindings saved: {path}");
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                _logService?.Error("Failed to save SCP:SL command bindings.", ex);
                 return false;
             }
         });
@@ -352,7 +319,9 @@ public sealed class ScpSlService
                     paths.Add(mainPath.Replace("/", "\\"));
             }
         }
-        catch { }
+        catch
+        {
+        }
 
         var commonPaths = new[]
         {
@@ -362,10 +331,10 @@ public sealed class ScpSlService
             @"E:\Steam"
         };
 
-        foreach (var p in commonPaths)
+        foreach (var path in commonPaths)
         {
-            if (Directory.Exists(p) && !paths.Contains(p))
-                paths.Add(p);
+            if (Directory.Exists(path) && !paths.Contains(path))
+                paths.Add(path);
         }
 
         try
@@ -386,13 +355,15 @@ public sealed class ScpSlService
                     if (parts.Length < 4)
                         continue;
 
-                    var libPath = parts[3].Trim().Replace("\\\\", "\\");
-                    if (Directory.Exists(libPath) && !paths.Contains(libPath))
-                        paths.Add(libPath);
+                    var libraryPath = parts[3].Trim().Replace("\\\\", "\\");
+                    if (Directory.Exists(libraryPath) && !paths.Contains(libraryPath))
+                        paths.Add(libraryPath);
                 }
             }
         }
-        catch { }
+        catch
+        {
+        }
 
         return paths;
     }
@@ -424,7 +395,9 @@ public sealed class ScpSlService
                     }
                 }
             }
-            catch { }
+            catch
+            {
+            }
         }
 
         var defaultPath = Path.Combine(steamapps, "common", "SCP Secret Laboratory");
@@ -443,7 +416,9 @@ public sealed class ScpSlService
                     return path.Replace("/", "\\");
             }
         }
-        catch { }
+        catch
+        {
+        }
 
         var commonPaths = new[]
         {
@@ -464,7 +439,7 @@ public sealed class ScpSlService
 
     private List<string> GetLocalConfigPaths(string steamPath)
     {
-        return SteamUserResolver.GetTargetLocalConfigPaths(steamPath);
+        return SteamUserResolver.GetTargetLocalConfigPaths(steamPath, PreferredSteamAccountId32);
     }
 
     private string? GetExistingLaunchOptions(string configPath)
@@ -507,7 +482,9 @@ public sealed class ScpSlService
                 }
             }
         }
-        catch { }
+        catch
+        {
+        }
 
         return null;
     }
@@ -542,13 +519,17 @@ public sealed class ScpSlService
                     braceCount += line.Count(c => c == '{') - line.Count(c => c == '}');
 
                     if (!inGameSection && string.Equals(line.Trim(), $"\"{AppId}\"", StringComparison.Ordinal))
-                    {
                         inGameSection = true;
-                    }
 
                     if (inGameSection && line.Contains("\"LaunchOptions\""))
                     {
                         newLine = ReplaceQuotedValue(line, "LaunchOptions", options);
+                        updated = true;
+                    }
+
+                    if (inGameSection && !updated && braceCount == 1 && line.Trim() == "}")
+                    {
+                        result.Add(CreateQuotedValueLine(line, "LaunchOptions", options));
                         updated = true;
                     }
 
@@ -565,11 +546,14 @@ public sealed class ScpSlService
             if (!updated)
                 return false;
 
+            _fileBackupService?.BackupFile(configPath, "SCP SL localconfig.vdf");
             File.WriteAllText(configPath, string.Join("\n", result));
+            _logService?.Info($"SCP:SL launch options updated: {configPath}");
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _logService?.Error($"Failed to update SCP:SL localconfig: {configPath}", ex);
             return false;
         }
     }
@@ -583,42 +567,17 @@ public sealed class ScpSlService
             if (string.IsNullOrWhiteSpace(option))
                 continue;
 
-            var trimmed = option.Trim();
-            if (!result.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
-                result.Add(trimmed);
+            var trimmedOption = option.Trim();
+            if (!result.Contains(trimmedOption, StringComparer.OrdinalIgnoreCase))
+                result.Add(trimmedOption);
         }
 
         return result;
     }
 
-    private static string BuildLaunchOptions(IReadOnlyList<string> selectedOptions, string? existingOptions, IReadOnlyList<string> managedOptions)
+    private static string BuildExactLaunchOptions(IReadOnlyList<string> selectedOptions)
     {
-        var preservedOptions = RemoveManagedOptions(existingOptions ?? string.Empty, managedOptions);
-        var finalOptions = new List<string>();
-
-        foreach (var option in selectedOptions)
-            finalOptions.Add(option);
-
-        if (!string.IsNullOrWhiteSpace(preservedOptions))
-            finalOptions.Add(preservedOptions);
-
-        return string.Join(" ", finalOptions).Trim();
-    }
-
-    private static string RemoveManagedOptions(string options, IReadOnlyList<string> managedOptions)
-    {
-        var cleaned = options;
-
-        foreach (var managedOption in managedOptions)
-        {
-            cleaned = Regex.Replace(
-                cleaned,
-                $@"(?<!\S){Regex.Escape(managedOption)}(?!\S)",
-                string.Empty,
-                RegexOptions.IgnoreCase);
-        }
-
-        return Regex.Replace(cleaned, @"\s+", " ").Trim();
+        return string.Join(" ", selectedOptions).Trim();
     }
 
     private static bool LaunchOptionsEqual(string? left, string? right)
@@ -631,12 +590,54 @@ public sealed class ScpSlService
     private static string? ExtractQuotedValue(string line, string key)
     {
         var match = Regex.Match(line, $"\\\"{Regex.Escape(key)}\\\"\\s*\\\"(?<value>.*)\\\"");
-        return match.Success ? match.Groups["value"].Value.Trim() : null;
+        return match.Success ? UnescapeVdfValue(match.Groups["value"].Value).Trim() : null;
     }
 
     private static string ReplaceQuotedValue(string line, string key, string value)
     {
-        return Regex.Replace(line, $"(\\\"{Regex.Escape(key)}\\\"\\s*\\\").*(\\\")", $"$1{value}$2");
+        return Regex.Replace(
+            line,
+            $"(?<prefix>\\\"{Regex.Escape(key)}\\\"\\s*\\\").*(?<suffix>\\\")",
+            match => match.Groups["prefix"].Value + EscapeVdfValue(value) + match.Groups["suffix"].Value);
+    }
+
+    private static string CreateQuotedValueLine(string closingBraceLine, string key, string value)
+    {
+        var indentation = GetIndentation(closingBraceLine);
+        var childIndentation = indentation.Contains('\t') ? indentation + "\t" : indentation + "    ";
+        return $"{childIndentation}\"{key}\"\t\t\"{EscapeVdfValue(value)}\"";
+    }
+
+    private static string GetIndentation(string line)
+    {
+        var count = 0;
+        while (count < line.Length && char.IsWhiteSpace(line[count]))
+            count++;
+
+        return line[..count];
+    }
+
+    private static string EscapeVdfValue(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
+    private static string UnescapeVdfValue(string value)
+    {
+        var result = new StringBuilder(value.Length);
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] == '\\' && i + 1 < value.Length)
+            {
+                result.Append(value[i + 1]);
+                i++;
+                continue;
+            }
+
+            result.Append(value[i]);
+        }
+
+        return result.ToString();
     }
 
     private bool WaitForSteamToFullyExit(int timeoutMilliseconds = 10000)

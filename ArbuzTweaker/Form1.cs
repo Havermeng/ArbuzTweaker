@@ -9,10 +9,17 @@ public partial class Form1 : Form
     private const int SidebarButtonGap = 8;
     private readonly ConfigService _configService;
     private readonly AppSettingsService _appSettingsService;
+    private readonly AppLogService _logService;
+    private readonly FileBackupService _fileBackupService;
+    private readonly RegistryBackupService _registryBackupService;
+    private readonly ProfileService _profileService;
     private readonly NvidiaInspectorService _nvidiaInspectorService;
     private readonly MsiAfterburnerService _msiAfterburnerService;
+    private readonly IntelXtuService _intelXtuService;
     private readonly UpdateService _updateService;
     private readonly Dota2Service _dota2Service;
+    private readonly ScpSlService _scpSlService;
+    private readonly string _appVersion;
     private Panel _sidebarPanel = null!;
     private Panel _contentPanel = null!;
     private Label _versionLabel = null!;
@@ -23,13 +30,21 @@ public partial class Form1 : Form
         _configService = new ConfigService();
         _configService.EnsureDirectoriesExist();
         _appSettingsService = new AppSettingsService(_configService);
+        _logService = new AppLogService(_configService);
+        _fileBackupService = new FileBackupService(_configService, _logService);
+        _registryBackupService = new RegistryBackupService(_configService, _logService);
+        _profileService = new ProfileService(_configService, _logService, _fileBackupService);
         _nvidiaInspectorService = new NvidiaInspectorService(_configService);
         _msiAfterburnerService = new MsiAfterburnerService();
+        _intelXtuService = new IntelXtuService();
         _dotaWarningShown = LoadDotaWarningConsent();
 
-        var version = GetType().Assembly.GetName().Version?.ToString() ?? "1.0.0";
-        _updateService = new UpdateService(version);
-        _dota2Service = new Dota2Service();
+        _appVersion = GetType().Assembly.GetName().Version?.ToString() ?? "1.0.0";
+        _updateService = new UpdateService(_appVersion);
+        _dota2Service = new Dota2Service(_fileBackupService, _logService);
+        _dota2Service.PreferredSteamAccountId32 = _appSettingsService.Load().PreferredSteamAccountId32;
+        _scpSlService = new ScpSlService(_fileBackupService, _logService);
+        _scpSlService.PreferredSteamAccountId32 = _appSettingsService.Load().PreferredSteamAccountId32;
 
         InitializeComponents();
         LoadTabs();
@@ -59,22 +74,35 @@ public partial class Form1 : Form
             Padding = new Padding(16, 0, 16, 0)
         };
 
+        var titleLayout = new FlowLayoutPanel
+        {
+            Location = new Point(16, 0),
+            Size = new Size(260, 52),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            FlowDirection = FlowDirection.LeftToRight,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+
         var titleLabel = new Label
         {
             Text = "ArbuzTweaker",
             Font = new Font("Segoe UI", 16, FontStyle.Bold),
             ForeColor = UiTheme.AccentGreen,
-            Location = new Point(16, 10),
-            AutoSize = true
+            AutoSize = true,
+            Margin = new Padding(0, 10, 8, 0)
         };
 
         _versionLabel = new Label
         {
-            Text = "v1.0.0",
+            Text = "v" + _appVersion,
             Font = new Font("Segoe UI", 9),
             ForeColor = UiTheme.TextDim,
-            Location = new Point(192, 16),
-            AutoSize = true
+            AutoSize = true,
+            Margin = new Padding(0, 18, 0, 0)
         };
 
         _sidebarPanel = new Panel
@@ -105,8 +133,9 @@ public partial class Form1 : Form
             Icon = new Icon(iconPath);
         }
 
-        titlePanel.Controls.Add(titleLabel);
-        titlePanel.Controls.Add(_versionLabel);
+        titleLayout.Controls.Add(titleLabel);
+        titleLayout.Controls.Add(_versionLabel);
+        titlePanel.Controls.Add(titleLayout);
         Controls.Add(_contentPanel);
         Controls.Add(sidebarDivider);
         Controls.Add(_sidebarPanel);
@@ -190,11 +219,12 @@ public partial class Form1 : Form
 
     private void LoadTabs()
     {
-        AddTab("Windows", new WindowsTweaksTab());
-        AddTab("Dota 2", new DotaTab(_configService, _dota2Service));
-        AddTab("SCP:SL", new ScpSlTab());
-        AddTab("Стороннее ПО", new ThirdPartyToolsTab(_nvidiaInspectorService, _msiAfterburnerService));
-        AddTab("Настройки", new SettingsTab(_appSettingsService, _updateService, ResetWarningChoices));
+        AddTab("Windows", new WindowsTweaksTab(_appSettingsService, _dota2Service, _scpSlService, _registryBackupService));
+        AddTab("Dota 2", new DotaTab(_configService, _dota2Service, _appSettingsService, _fileBackupService));
+        AddTab("SCP:SL", new ScpSlTab(_scpSlService, _appSettingsService));
+        AddTab("Прицел", new CrosshairTab());
+        AddTab("Стороннее ПО", new ThirdPartyToolsTab(_nvidiaInspectorService, _msiAfterburnerService, _intelXtuService));
+        AddTab("Настройки", new SettingsTab(_appSettingsService, _updateService, _fileBackupService, _registryBackupService, _profileService, _logService, ResetWarningChoices));
     }
 
     private bool _dotaWarningShown = false;
@@ -341,11 +371,18 @@ public partial class Form1 : Form
 
                         if (isInstaller)
                         {
+                            var sha256 = _updateService.GetFileSha256(downloadedPath);
+                            var hasSignature = _updateService.HasAuthenticodeSignature(downloadedPath);
                             var installNowResult = MessageBox.Show(
-                                "Обновление скачано. Установить его сейчас?",
+                                "Обновление скачано.\n\n" +
+                                $"SHA256: {sha256}\n\n" +
+                                (hasSignature
+                                    ? "Цифровая подпись найдена.\n\n"
+                                    : "Внимание: цифровая подпись не найдена. Запускайте файл только если доверяете этому релизу.\n\n") +
+                                "Установить его сейчас?",
                                 "Установка обновления",
                                 MessageBoxButtons.YesNo,
-                                MessageBoxIcon.Question);
+                                hasSignature ? MessageBoxIcon.Question : MessageBoxIcon.Warning);
 
                             if (installNowResult == DialogResult.Yes && _updateService.LaunchDownloadedUpdate(downloadedPath))
                             {

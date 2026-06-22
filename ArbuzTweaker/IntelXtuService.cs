@@ -7,10 +7,10 @@ using Microsoft.Win32;
 
 namespace ArbuzTweaker;
 
-public sealed class MsiAfterburnerService
+public sealed class IntelXtuService
 {
-    public const string PackageId = "Guru3D.Afterburner";
-    public const string OfficialPageUrl = "https://www.msi.com/Landing/afterburner/graphics-cards";
+    public const string PackageId = "Intel.IntelExtremeTuningUtility";
+    public const string OfficialPageUrl = "https://www.intel.com/content/www/us/en/download/17881/intel-extreme-tuning-utility-intel-xtu.html";
     private static readonly TimeSpan WingetTimeout = TimeSpan.FromMinutes(10);
 
     public bool IsInstalled => FindInstalledEntry() != null;
@@ -26,11 +26,11 @@ public sealed class MsiAfterburnerService
 
     public async Task<ThirdPartyToolInstallResult> InstallOrUpdateAsync()
     {
-        var alreadyInstalled = IsInstalled;
-        var command = alreadyInstalled ? "upgrade" : "install";
+        if (IsInstalled)
+            return ThirdPartyToolInstallResult.Success($"Intel XTU уже установлен ({InstalledVersion}). Для выбора другой версии откройте официальную страницу Intel XTU.");
 
         var arguments = new StringBuilder();
-        arguments.Append(command);
+        arguments.Append("install");
         arguments.Append(" --id ").Append(PackageId);
         arguments.Append(" -e --source winget");
         arguments.Append(" --accept-package-agreements --accept-source-agreements");
@@ -40,8 +40,7 @@ public sealed class MsiAfterburnerService
         if (!result.IsSuccess)
             return ThirdPartyToolInstallResult.Failure(result.Message);
 
-        var action = alreadyInstalled ? "обновлён" : "установлен";
-        return ThirdPartyToolInstallResult.Success($"MSI Afterburner {action} ({InstalledVersion}).");
+        return ThirdPartyToolInstallResult.Success($"Intel XTU установлен ({InstalledVersion}).");
     }
 
     public bool OpenInstallFolder()
@@ -50,9 +49,7 @@ public sealed class MsiAfterburnerService
         var folder = entry?.InstallLocation;
 
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
-        {
             folder = TryResolveFolderFromDisplayIcon(entry?.DisplayIcon);
-        }
 
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return false;
@@ -170,7 +167,7 @@ public sealed class MsiAfterburnerService
                 continue;
 
             var displayName = subKey.GetValue("DisplayName") as string;
-            if (string.IsNullOrWhiteSpace(displayName) || !displayName.Contains("MSI Afterburner", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(displayName) || !IsIntelXtuDisplayName(displayName))
                 continue;
 
             return new InstalledProgramEntry
@@ -183,6 +180,13 @@ public sealed class MsiAfterburnerService
         }
 
         return null;
+    }
+
+    private static bool IsIntelXtuDisplayName(string displayName)
+    {
+        return displayName.Contains("Intel", StringComparison.OrdinalIgnoreCase)
+            && (displayName.Contains("Extreme Tuning Utility", StringComparison.OrdinalIgnoreCase)
+                || displayName.Contains("XTU", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string? TryResolveFolderFromDisplayIcon(string? displayIcon)

@@ -1,8 +1,4 @@
-using System;
 using System.Diagnostics;
-using System.IO;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace ArbuzTweaker;
 
@@ -10,8 +6,10 @@ public partial class ScpSlCommandBindingsTab : UserControl
 {
     private readonly ScpSlService _scpSlService;
     private TextBox _bindingsTextBox = null!;
+    private TextBox _bindingsSearchTextBox = null!;
     private Label _pathLabel = null!;
     private Label _statusLabel = null!;
+    private int _lastSearchStart;
 
     public ScpSlCommandBindingsTab(ScpSlService scpSlService)
     {
@@ -45,11 +43,13 @@ public partial class ScpSlCommandBindingsTab : UserControl
         var rootLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(20),
+            AutoScroll = false,
+            Padding = new Padding(20, 10, 20, 20),
             ColumnCount = 1,
-            RowCount = 8
+            RowCount = 9
         };
         rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
@@ -61,7 +61,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
 
         var titleLabel = new Label
         {
-            Text = "SCP:SL - Бинды команд",
+            Text = "SCP:SL - бинды команд",
             Font = new Font("Segoe UI", 14, FontStyle.Bold),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 6)
@@ -77,8 +77,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
 
         var infoLabel = new Label
         {
-            Text =
-                "Данный пункт предоставляет возможность назначать консольные команды на клавиши. В окно ниже необходимо записать бинд по одному из примеров ниже. Чтобы посмотреть нужное обозначение для каждой клавиши, нажмите кнопку \"Список клавиш\".",
+            Text = "Эта вкладка редактирует пользовательский файл биндов SCP:SL. Она не отправляет команды в игру и не автоматизирует игровой процесс.",
             AutoSize = true,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
@@ -93,6 +92,8 @@ public partial class ScpSlCommandBindingsTab : UserControl
             Margin = new Padding(0, 0, 0, 4)
         };
 
+        var searchPanel = CreateBindingsSearchPanel();
+
         _bindingsTextBox = new TextBox
         {
             Dock = DockStyle.Fill,
@@ -101,14 +102,15 @@ public partial class ScpSlCommandBindingsTab : UserControl
             AcceptsTab = true,
             ScrollBars = ScrollBars.Both,
             WordWrap = false,
-            Font = new Font("Consolas", 10),
             MinimumSize = new Size(0, 80),
             Margin = new Padding(0, 0, 0, 12)
         };
+        UiTheme.StyleEditorTextBox(_bindingsTextBox);
+        _bindingsTextBox.TextChanged += (s, e) => _lastSearchStart = 0;
 
         var examplesLabel = new Label
         {
-            Text = "Пример серверной команды: 104:.res    |    Пример игровой команды: 104:emotion happy",
+            Text = "Пример: 104:emotion happy",
             AutoSize = true,
             ForeColor = Color.Gainsboro,
             Margin = new Padding(0, 0, 0, 8)
@@ -124,7 +126,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
         };
 
         var saveButton = new Button { Text = "Сохранить", Size = new Size(115, 35), Margin = new Padding(0, 0, 10, 0) };
-        saveButton.Click += async (s, e) => await SaveAsync();
+        saveButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveAsync);
 
         var openFolderButton = new Button { Text = "Показать файл", Size = new Size(140, 35), Margin = new Padding(0, 0, 10, 0) };
         openFolderButton.Click += (s, e) => OpenCommandBindingsFolder();
@@ -132,11 +134,17 @@ public partial class ScpSlCommandBindingsTab : UserControl
         var guideButton = new Button { Text = "Инструкция", Size = new Size(125, 35), Margin = new Padding(0, 0, 10, 0) };
         guideButton.Click += (s, e) => ShowGuideDialog();
 
-        var keyCodesButton = new Button { Text = "Список клавиш", Size = new Size(140, 35), Margin = new Padding(0, 0, 10, 0) };
+        var keyCodesButton = new Button { Text = "Клавиши", Size = new Size(125, 35), Margin = new Padding(0, 0, 10, 0) };
         keyCodesButton.Click += (s, e) => ShowKeyCodesDialog();
 
-        var clearButton = new Button { Text = "Сбросить", Size = new Size(110, 35), Margin = new Padding(0) };
+        var clearButton = new Button { Text = "Очистить", Size = new Size(110, 35), Margin = new Padding(0) };
         clearButton.Click += (s, e) => _bindingsTextBox.Clear();
+
+        UiTheme.StyleActionButton(saveButton, true);
+        UiTheme.StyleActionButton(openFolderButton);
+        UiTheme.StyleActionButton(guideButton);
+        UiTheme.StyleActionButton(keyCodesButton);
+        UiTheme.StyleActionButton(clearButton);
 
         buttonsPanel.Controls.Add(saveButton);
         buttonsPanel.Controls.Add(openFolderButton);
@@ -156,12 +164,93 @@ public partial class ScpSlCommandBindingsTab : UserControl
         rootLayout.Controls.Add(_pathLabel, 0, 1);
         rootLayout.Controls.Add(infoLabel, 0, 2);
         rootLayout.Controls.Add(bindingsLabel, 0, 3);
-        rootLayout.Controls.Add(_bindingsTextBox, 0, 4);
-        rootLayout.Controls.Add(examplesLabel, 0, 5);
-        rootLayout.Controls.Add(buttonsPanel, 0, 6);
-        rootLayout.Controls.Add(_statusLabel, 0, 7);
+        rootLayout.Controls.Add(searchPanel, 0, 4);
+        rootLayout.Controls.Add(_bindingsTextBox, 0, 5);
+        rootLayout.Controls.Add(examplesLabel, 0, 6);
+        rootLayout.Controls.Add(buttonsPanel, 0, 7);
+        rootLayout.Controls.Add(_statusLabel, 0, 8);
 
         Controls.Add(rootLayout);
+    }
+
+    private FlowLayoutPanel CreateBindingsSearchPanel()
+    {
+        var panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+
+        _bindingsSearchTextBox = new TextBox
+        {
+            Width = 360,
+            Margin = new Padding(0, 0, 8, 0)
+        };
+        UiTheme.StyleSearchTextBox(_bindingsSearchTextBox);
+        _bindingsSearchTextBox.KeyDown += (s, e) =>
+        {
+            if (e.KeyCode != Keys.Enter)
+                return;
+
+            e.SuppressKeyPress = true;
+            FindNextBinding();
+        };
+
+        var searchButton = new Button { Text = "Найти", Size = new Size(100, 31), Margin = new Padding(0, 0, 8, 0) };
+        searchButton.Click += (s, e) => FindNextBinding();
+        UiTheme.StyleActionButton(searchButton, true);
+
+        var clearButton = new Button { Text = "Сбросить поиск", Size = new Size(145, 31), Margin = new Padding(0) };
+        clearButton.Click += (s, e) =>
+        {
+            _bindingsSearchTextBox.Clear();
+            _lastSearchStart = 0;
+            _bindingsTextBox.SelectionLength = 0;
+        };
+        UiTheme.StyleActionButton(clearButton);
+
+        panel.Controls.Add(_bindingsSearchTextBox);
+        panel.Controls.Add(searchButton);
+        panel.Controls.Add(clearButton);
+        return panel;
+    }
+
+    private void FindNextBinding()
+    {
+        var query = _bindingsSearchTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            ShowStatus("Введите текст для поиска", Color.Orange);
+            return;
+        }
+
+        var text = _bindingsTextBox.Text;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            ShowStatus("Файл биндов пуст", Color.Orange);
+            return;
+        }
+
+        var start = Math.Min(Math.Max(_lastSearchStart, 0), text.Length);
+        var index = text.IndexOf(query, start, StringComparison.OrdinalIgnoreCase);
+        if (index < 0 && start > 0)
+            index = text.IndexOf(query, 0, StringComparison.OrdinalIgnoreCase);
+
+        if (index < 0)
+        {
+            ShowStatus("Ничего не найдено", Color.Orange);
+            _lastSearchStart = 0;
+            return;
+        }
+
+        _bindingsTextBox.Focus();
+        _bindingsTextBox.Select(index, query.Length);
+        _bindingsTextBox.ScrollToCaret();
+        _lastSearchStart = index + query.Length;
+        ShowStatus("Совпадение найдено", Color.Green);
     }
 
     private async Task SaveAsync()
@@ -222,14 +311,10 @@ public partial class ScpSlCommandBindingsTab : UserControl
             "1. Каждый бинд пишется с новой строки.\n" +
             "2. Формат строки: КОД_КЛАВИШИ:КОМАНДА\n" +
             "3. Код клавиши можно посмотреть через кнопку \"Список клавиш\".\n\n" +
-            "Примеры:\n" +
-            "104:.res - серверная команда, пишется через точку.\n" +
-            "104:emotion happy - игровая команда, пишется без префикса.\n\n" +
+            "Пример:\n" +
+            "104:emotion happy\n\n" +
             "Удаление бинда:\n" +
-            "Удалите ненужную строку из файла ниже и нажмите \"Сохранить\".\n\n" +
-            "Альтернативный способ через игру:\n" +
-            "Откройте консоль на Ё / ~ и пропишите: cmdbind КНОПКА КОМАНДА\n" +
-            "Пример: cmdbind mouse4 .stun",
+            "Удалите ненужную строку из файла ниже и нажмите \"Сохранить\".",
             "SCP:SL - инструкция по биндам",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -257,8 +342,9 @@ public partial class ScpSlCommandBindingsTab : UserControl
             WordWrap = false,
             Font = new Font("Consolas", 10),
             Text = NormalizeLineEndings(KeyCodesText),
-            BackColor = Color.White,
-            ForeColor = Color.Black
+            BackColor = Color.FromArgb(24, 24, 24),
+            ForeColor = UiTheme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle
         };
 
         var closeButton = new Button
@@ -289,7 +375,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
 
     private const string KeyCodesText = """
 Формат строки в cmdbinding.txt: КОД_КЛАВИШИ:КОМАНДА
-Пример: 104:/ghost
+Пример: 104:emotion happy
 
 Основные клавиши:
 None = 0

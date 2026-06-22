@@ -1,39 +1,37 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Management;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace ArbuzTweaker;
 
 public partial class ScpSlLaunchOptionsTab : UserControl
 {
     private const string NoLogOption = "-nolog";
-    private const string RuOption = "-ru";
     private const string WindowModeExclusiveOption = "-window-mode exclusive";
     private const string ScreenFullscreenOption = "-screen-fullscreen";
     private const string ScreenQualityLowOption = "-screen-quality Low";
     private const string FDiscordOption = "-fdiscord";
+    private const string RuWeakHttpSecurityOption = "-ru --weak-http-security";
 
     private readonly ScpSlService _scpSlService;
+    private readonly AppSettingsService _appSettingsService;
+    private ComboBox _steamAccountComboBox = null!;
     private TextBox _launchOptionsTextBox = null!;
+    private TextBox _optionsSearchTextBox = null!;
     private Panel _optionsPanel = null!;
-    private CheckBox _nologCheckBox = null!;
-    private CheckBox _ruCheckBox = null!;
+    private CheckBox _noLogCheckBox = null!;
     private CheckBox _windowModeCheckBox = null!;
     private CheckBox _fullscreenCheckBox = null!;
     private CheckBox _screenQualityCheckBox = null!;
-    private CheckBox _fdiscordCheckBox = null!;
+    private CheckBox _discordCheckBox = null!;
+    private CheckBox _ruWeakHttpSecurityCheckBox = null!;
     private Label _pathLabel = null!;
     private Label _statusLabel = null!;
-    private bool _pathFound;
     private bool _isUpdatingUi;
+    private bool _isLoadingSteamAccounts;
 
-    public ScpSlLaunchOptionsTab(ScpSlService scpSlService)
+    public ScpSlLaunchOptionsTab(ScpSlService scpSlService, AppSettingsService appSettingsService)
     {
         _scpSlService = scpSlService;
+        _appSettingsService = appSettingsService;
         InitializeComponent();
         LoadStateAsync();
     }
@@ -43,19 +41,47 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         var (gamePath, _) = await _scpSlService.FindGameAsync();
         if (gamePath != null)
         {
-            _pathFound = true;
             _pathLabel.Text = $"SCP:SL найдена: {gamePath}";
             _pathLabel.ForeColor = Color.Green;
         }
         else
         {
-            _pathLabel.Text = "SCP:SL не найдена. Можно подготовить параметры локально.";
+            _pathLabel.Text = "SCP:SL не найдена. Параметры можно применить, если в Steam уже есть запись игры.";
             _pathLabel.ForeColor = Color.Orange;
         }
 
+        await LoadSteamAccountsAsync();
+
         var currentLaunchOptions = await _scpSlService.GetCurrentLaunchOptionsAsync();
         if (!string.IsNullOrWhiteSpace(currentLaunchOptions))
-            LoadLaunchOptions(currentLaunchOptions);
+            SetLaunchOptionsText(currentLaunchOptions);
+    }
+
+    private async Task LoadSteamAccountsAsync()
+    {
+        _isLoadingSteamAccounts = true;
+        _steamAccountComboBox.Items.Clear();
+
+        var settings = _appSettingsService.Load();
+        _scpSlService.PreferredSteamAccountId32 = settings.PreferredSteamAccountId32;
+        var users = await _scpSlService.GetSteamUsersAsync();
+
+        foreach (var user in users)
+            _steamAccountComboBox.Items.Add(user);
+
+        if (users.Count == 0)
+        {
+            _steamAccountComboBox.Enabled = false;
+            _isLoadingSteamAccounts = false;
+            return;
+        }
+
+        _steamAccountComboBox.Enabled = true;
+        var selectedUser = users.FirstOrDefault(user => string.Equals(user.AccountId32, settings.PreferredSteamAccountId32, StringComparison.OrdinalIgnoreCase))
+            ?? users.First();
+        _steamAccountComboBox.SelectedItem = selectedUser;
+        _scpSlService.PreferredSteamAccountId32 = selectedUser.AccountId32;
+        _isLoadingSteamAccounts = false;
     }
 
     private void InitializeComponent()
@@ -65,25 +91,30 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         var rootLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(20),
+            AutoScroll = false,
+            Padding = new Padding(20, 10, 20, 20),
             ColumnCount = 1,
-            RowCount = 11
+            RowCount = 14
         };
         rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 42F));
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 58F));
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 130F));
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
 
         var titleLabel = new Label
         {
-            Text = "SCP:SL - Параметры запуска",
+            Text = "SCP:SL - параметры запуска",
             Font = new Font("Segoe UI", 14, FontStyle.Bold),
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 6)
@@ -99,12 +130,29 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
         var infoLabel = new Label
         {
-            Text = "Эта вкладка читает и меняет строку LaunchOptions для SCP: Secret Laboratory в localconfig.vdf.",
+            Text = "Вкладка редактирует только строку LaunchOptions для SCP: Secret Laboratory в пользовательском localconfig.vdf Steam.",
             AutoSize = true,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 12)
         };
+
+        var steamAccountLabel = new Label
+        {
+            Text = "Steam-аккаунт для localconfig.vdf:",
+            AutoSize = true,
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 4)
+        };
+
+        _steamAccountComboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 520,
+            Enabled = false,
+            Margin = new Padding(0, 0, 0, 12)
+        };
+        _steamAccountComboBox.SelectedIndexChanged += async (s, e) => await SteamAccountComboBox_SelectedIndexChangedAsync();
 
         var launchOptionsLabel = new Label
         {
@@ -116,7 +164,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
         var launchOptionsHintLabel = new Label
         {
-            Text = "Каждая строка в окне ниже - отдельная команда запуска для SCP:SL.",
+            Text = "Каждая строка ниже - отдельная команда запуска. При сохранении твикер объединит строки и запишет их обратно в LaunchOptions.",
             AutoSize = true,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
@@ -128,10 +176,10 @@ public partial class ScpSlLaunchOptionsTab : UserControl
             Dock = DockStyle.Fill,
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 10),
-            MinimumSize = new Size(0, 190),
+            MinimumSize = new Size(0, 0),
             Margin = new Padding(0, 0, 0, 12)
         };
+        UiTheme.StyleEditorTextBox(_launchOptionsTextBox);
         _launchOptionsTextBox.TextChanged += LaunchOptionsTextBox_TextChanged;
 
         var quickOptionsLabel = new Label
@@ -144,27 +192,28 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
         var quickOptionsHintLabel = new Label
         {
-            Text = "Эти пункты добавляют или убирают строки в LaunchOptions. Список ниже автоматически подстраивается под ширину окна.",
+            Text = "Эти пункты добавляют или убирают строки в LaunchOptions. Перед записью localconfig.vdf создаётся файловый бэкап.",
             AutoSize = true,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 10)
         };
 
+        var quickOptionsSearchPanel = CreateOptionsSearchPanel();
+
         _optionsPanel = new Panel
         {
             Dock = DockStyle.Fill,
             AutoScroll = true,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.FromArgb(35, 35, 35),
             Margin = new Padding(0, 0, 0, 12)
         };
+        UiTheme.StyleListPanel(_optionsPanel);
         _optionsPanel.Resize += (s, e) => PopulateOptionsPanel();
         PopulateOptionsPanel();
 
         var buttonsPanel = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
             WrapContents = true,
             FlowDirection = FlowDirection.LeftToRight,
@@ -172,16 +221,21 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         };
 
         var applyButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
-        applyButton.Click += async (s, e) => await SaveAndApplyAsync();
+        applyButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveAndApplyAsync);
 
         var helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
         helpButton.Click += (s, e) => ShowHelpDialog();
 
         var openFileButton = new Button { Text = "Показать localconfig.vdf", Size = new Size(230, 35), Margin = new Padding(0, 0, 10, 0) };
-        openFileButton.Click += async (s, e) => await OpenLocalConfigFolderAsync();
+        openFileButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, OpenLocalConfigFolderAsync);
 
         var resetButton = new Button { Text = "Сбросить", Size = new Size(120, 35), Margin = new Padding(0) };
-        resetButton.Click += async (s, e) => await ResetAsync();
+        resetButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ResetAsync);
+
+        UiTheme.StyleActionButton(applyButton, true);
+        UiTheme.StyleActionButton(helpButton);
+        UiTheme.StyleActionButton(openFileButton);
+        UiTheme.StyleActionButton(resetButton);
 
         buttonsPanel.Controls.Add(applyButton);
         buttonsPanel.Controls.Add(helpButton);
@@ -199,16 +253,78 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         rootLayout.Controls.Add(titleLabel, 0, 0);
         rootLayout.Controls.Add(_pathLabel, 0, 1);
         rootLayout.Controls.Add(infoLabel, 0, 2);
-        rootLayout.Controls.Add(launchOptionsLabel, 0, 3);
-        rootLayout.Controls.Add(launchOptionsHintLabel, 0, 4);
-        rootLayout.Controls.Add(_launchOptionsTextBox, 0, 5);
-        rootLayout.Controls.Add(quickOptionsLabel, 0, 6);
-        rootLayout.Controls.Add(quickOptionsHintLabel, 0, 7);
-        rootLayout.Controls.Add(_optionsPanel, 0, 8);
-        rootLayout.Controls.Add(buttonsPanel, 0, 9);
-        rootLayout.Controls.Add(_statusLabel, 0, 10);
+        rootLayout.Controls.Add(steamAccountLabel, 0, 3);
+        rootLayout.Controls.Add(_steamAccountComboBox, 0, 4);
+        rootLayout.Controls.Add(launchOptionsLabel, 0, 5);
+        rootLayout.Controls.Add(launchOptionsHintLabel, 0, 6);
+        rootLayout.Controls.Add(_launchOptionsTextBox, 0, 7);
+        rootLayout.Controls.Add(quickOptionsLabel, 0, 8);
+        rootLayout.Controls.Add(quickOptionsHintLabel, 0, 9);
+        rootLayout.Controls.Add(quickOptionsSearchPanel, 0, 10);
+        rootLayout.Controls.Add(_optionsPanel, 0, 11);
+        rootLayout.Controls.Add(buttonsPanel, 0, 12);
+        rootLayout.Controls.Add(_statusLabel, 0, 13);
 
         Controls.Add(rootLayout);
+    }
+
+    private FlowLayoutPanel CreateOptionsSearchPanel()
+    {
+        var panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+
+        _optionsSearchTextBox = new TextBox
+        {
+            Width = 360,
+            Margin = new Padding(0, 0, 8, 0)
+        };
+        UiTheme.StyleSearchTextBox(_optionsSearchTextBox);
+        _optionsSearchTextBox.KeyDown += (s, e) =>
+        {
+            if (e.KeyCode != Keys.Enter)
+                return;
+
+            e.SuppressKeyPress = true;
+            PopulateOptionsPanel();
+        };
+
+        var searchButton = new Button { Text = "Найти", Size = new Size(100, 31), Margin = new Padding(0, 0, 8, 0) };
+        searchButton.Click += (s, e) => PopulateOptionsPanel();
+        UiTheme.StyleActionButton(searchButton, true);
+
+        var clearButton = new Button { Text = "Сбросить поиск", Size = new Size(145, 31), Margin = new Padding(0) };
+        clearButton.Click += (s, e) =>
+        {
+            _optionsSearchTextBox.Clear();
+            PopulateOptionsPanel();
+        };
+        UiTheme.StyleActionButton(clearButton);
+
+        panel.Controls.Add(_optionsSearchTextBox);
+        panel.Controls.Add(searchButton);
+        panel.Controls.Add(clearButton);
+        return panel;
+    }
+
+    private async Task SteamAccountComboBox_SelectedIndexChangedAsync()
+    {
+        if (_isLoadingSteamAccounts || _steamAccountComboBox.SelectedItem is not SteamUserInfo user)
+            return;
+
+        var settings = _appSettingsService.Load();
+        settings.PreferredSteamAccountId32 = user.AccountId32;
+        _appSettingsService.Save(settings);
+        _scpSlService.PreferredSteamAccountId32 = user.AccountId32;
+
+        var currentLaunchOptions = await _scpSlService.GetCurrentLaunchOptionsAsync();
+        SetLaunchOptionsText(currentLaunchOptions ?? string.Empty);
+        ShowStatus($"Выбран Steam-аккаунт: {user.DisplayName}", Color.Green);
     }
 
     private async Task SaveAndApplyAsync()
@@ -217,28 +333,22 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         if (!string.Equals(_launchOptionsTextBox.Text, normalizedText, StringComparison.Ordinal))
             SetLaunchOptionsText(normalizedText);
 
-        var selectedOptions = GetSelectedOptionsFromText();
-
-        if (!_pathFound)
-        {
-            ShowStatus("SCP:SL не найдена", Color.Orange);
-            return;
-        }
-
-        await ApplyLaunchOptionsAsync(selectedOptions);
+        await ApplyLaunchOptionsAsync(GetSelectedOptionsFromText(), false);
     }
 
     private async Task ResetAsync()
     {
-        SetLaunchOptionsText(string.Empty);
+        var result = MessageBox.Show(
+            "Сброс очистит все параметры запуска SCP:SL для выбранного Steam-аккаунта. Продолжить?",
+            "Подтверждение",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
 
-        if (!_pathFound)
-        {
-            ShowStatus("SCP:SL не найдена", Color.Orange);
+        if (result != DialogResult.Yes)
             return;
-        }
 
-        await ApplyLaunchOptionsAsync(Array.Empty<string>());
+        SetLaunchOptionsText(string.Empty);
+        await ApplyLaunchOptionsAsync(Array.Empty<string>(), true);
     }
 
     private async Task OpenLocalConfigFolderAsync()
@@ -265,22 +375,12 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         }
     }
 
-    private async Task ApplyLaunchOptionsAsync(IReadOnlyList<string> enabledOptions)
+    private async Task ApplyLaunchOptionsAsync(IReadOnlyList<string> enabledOptions, bool isReset)
     {
-        var managedOptions = new[]
-        {
-            NoLogOption,
-            RuOption,
-            WindowModeExclusiveOption,
-            ScreenFullscreenOption,
-            ScreenQualityLowOption,
-            FDiscordOption
-        };
+        var needsUpdate = await _scpSlService.NeedsExactLaunchOptionsUpdateAsync(enabledOptions);
 
-        var needsUpdate = await _scpSlService.NeedsLaunchOptionsUpdateAsync(enabledOptions, managedOptions);
-
-        bool steamWasRunning = false;
-        bool steamClosed = false;
+        var steamWasRunning = false;
+        var steamClosed = false;
 
         if (needsUpdate && _scpSlService.IsSteamRunning())
         {
@@ -308,7 +408,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
         if (needsUpdate)
         {
-            var applyResult = await _scpSlService.SetLaunchOptionsAsync(enabledOptions, managedOptions);
+            var applyResult = await _scpSlService.SetExactLaunchOptionsAsync(enabledOptions);
             if (!applyResult.IsSuccess)
             {
                 ShowStatus(applyResult.Message, Color.Orange);
@@ -316,23 +416,25 @@ public partial class ScpSlLaunchOptionsTab : UserControl
             }
         }
 
+        var baseMessage = isReset ? "Сброшено" : "Сохранено";
+
         if (steamClosed)
         {
             if (_scpSlService.StartSteam())
-                ShowStatus("Сохранено. Steam перезапущен", Color.Green);
+                ShowStatus($"{baseMessage}. Steam перезапущен", Color.Green);
             else
-                ShowStatus("Сохранено. Не удалось запустить Steam", Color.Orange);
+                ShowStatus($"{baseMessage}. Не удалось запустить Steam", Color.Orange);
 
             return;
         }
 
         if (steamWasRunning)
         {
-            ShowStatus("Сохранено. Перезапусти Steam", Color.Orange);
+            ShowStatus($"{baseMessage}. Перезапусти Steam", Color.Orange);
             return;
         }
 
-        ShowStatus("Параметры запуска сохранены", Color.Green);
+        ShowStatus(baseMessage, Color.Green);
     }
 
     private void PopulateOptionsPanel()
@@ -347,116 +449,101 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         _optionsPanel.SuspendLayout();
         _optionsPanel.Controls.Clear();
 
-        var y = 12;
-        var availableWidth = Math.Max(620, _optionsPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 28);
-        var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.32), 150, 260);
-        var descriptionX = 18 + checkBoxWidth + 18;
-        var descriptionWidth = Math.Max(260, availableWidth - checkBoxWidth - 26);
+        var y = 8;
+        var rowIndex = 0;
+        var searchQuery = GetOptionsSearchQuery();
+        var availableWidth = Math.Max(620, _optionsPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 24);
 
-        AddOptionRow(ref y, ref _nologCheckBox, NoLogOption, "Отключает запись логов игры.", selectedOptions.Contains(NoLogOption), checkBoxWidth, descriptionX, descriptionWidth, NoLogCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref _ruCheckBox, RuOption, "Иногда помогает при ошибках подключения к центральным серверам.", selectedOptions.Contains(RuOption), checkBoxWidth, descriptionX, descriptionWidth, RuCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref _windowModeCheckBox, WindowModeExclusiveOption, "Включает эксклюзивный полноэкранный режим окна.", selectedOptions.Contains(WindowModeExclusiveOption), checkBoxWidth, descriptionX, descriptionWidth, WindowModeCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref _fullscreenCheckBox, ScreenFullscreenOption, "Запускает игру в полноэкранном режиме.", selectedOptions.Contains(ScreenFullscreenOption), checkBoxWidth, descriptionX, descriptionWidth, FullscreenCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref _screenQualityCheckBox, ScreenQualityLowOption, "Ставит низкое качество изображения через launch options.", selectedOptions.Contains(ScreenQualityLowOption), checkBoxWidth, descriptionX, descriptionWidth, ScreenQualityCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref _fdiscordCheckBox, FDiscordOption, "Включает авторизацию в игре через Discord.", selectedOptions.Contains(FDiscordOption), checkBoxWidth, descriptionX, descriptionWidth, FDiscordCheckBox_CheckedChanged);
+        y = UiTheme.AddListSectionHeader(_optionsPanel, y, availableWidth, "Параметры запуска");
+        AddOptionRow(ref y, ref rowIndex, ref _ruWeakHttpSecurityCheckBox, RuWeakHttpSecurityOption, "Для RU-региона. Иногда помогает с проблемами подключения к серверам игры.", selectedOptions.Contains(RuWeakHttpSecurityOption), searchQuery, RuWeakHttpSecurityCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _noLogCheckBox, NoLogOption, "Отключает часть логирования Unity/игры.", selectedOptions.Contains(NoLogOption), searchQuery, NoLogCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _discordCheckBox, FDiscordOption, "Запускает игру с Discord-авторизацией, если она нужна текущей сборке.", selectedOptions.Contains(FDiscordOption), searchQuery, DiscordCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _fullscreenCheckBox, ScreenFullscreenOption, "Запускает игру в полноэкранном режиме.", selectedOptions.Contains(ScreenFullscreenOption), searchQuery, FullscreenCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _windowModeCheckBox, WindowModeExclusiveOption, "Просит Unity использовать эксклюзивный полноэкранный режим.", selectedOptions.Contains(WindowModeExclusiveOption), searchQuery, WindowModeCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _screenQualityCheckBox, ScreenQualityLowOption, "Передаёт Unity низкий пресет качества через параметры запуска.", selectedOptions.Contains(ScreenQualityLowOption), searchQuery, ScreenQualityCheckBox_CheckedChanged);
 
+        _optionsPanel.AutoScrollMinSize = new Size(0, y + 12);
         _optionsPanel.ResumeLayout();
         _isUpdatingUi = preserveState;
     }
 
-    private void AddOptionRow(ref int y, ref CheckBox field, string optionText, string description, bool isChecked, int checkBoxWidth, int descriptionX, int descriptionWidth, EventHandler handler)
+    private void AddOptionRow(
+        ref int y,
+        ref int rowIndex,
+        ref CheckBox field,
+        string optionText,
+        string description,
+        bool isChecked,
+        string searchQuery,
+        EventHandler handler)
     {
-        field = new CheckBox
-        {
-            Text = optionText,
-            Location = new Point(18, y),
-            Size = new Size(checkBoxWidth, 24),
-            AutoSize = false,
-            ForeColor = Color.White,
-            BackColor = Color.Transparent,
-            Checked = isChecked
-        };
-        field.CheckedChanged += handler;
-
-        var descriptionFont = new Font("Segoe UI", 10);
-        var descriptionSize = TextRenderer.MeasureText(
+        y = UiTheme.AddCheckListRow(
+            _optionsPanel,
+            y,
+            Math.Max(620, _optionsPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 24),
+            rowIndex,
+            optionText,
             description,
-            descriptionFont,
-            new Size(descriptionWidth, int.MaxValue),
-            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
+            isChecked,
+            handler,
+            out field,
+            optionText,
+            MatchesSearch(optionText, description, searchQuery));
+        rowIndex++;
+    }
 
-        var descriptionLabel = new Label
-        {
-            Text = description,
-            Location = new Point(descriptionX, y + 2),
-            Size = new Size(descriptionWidth, Math.Max(28, descriptionSize.Height + 8)),
-            AutoSize = false,
-            UseMnemonic = false,
-            TextAlign = ContentAlignment.TopLeft,
-            Font = descriptionFont,
-            ForeColor = Color.Gainsboro,
-            BackColor = Color.Transparent
-        };
+    private string GetOptionsSearchQuery()
+    {
+        return _optionsSearchTextBox?.Text.Trim() ?? string.Empty;
+    }
 
-        _optionsPanel.Controls.Add(field);
-        _optionsPanel.Controls.Add(descriptionLabel);
-        y += Math.Max(field.Height, descriptionLabel.Height) + 12;
+    private static bool MatchesSearch(string command, string description, string query)
+    {
+        return !string.IsNullOrWhiteSpace(query)
+            && (command.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || description.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
     private void NoLogCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingUi)
-            return;
-
-        SetOptionLine(NoLogOption, _nologCheckBox.Checked);
-    }
-
-    private void RuCheckBox_CheckedChanged(object? sender, EventArgs e)
-    {
-        if (_isUpdatingUi)
-            return;
-
-        SetOptionLine(RuOption, _ruCheckBox.Checked);
+        if (!_isUpdatingUi)
+            SetOptionLine(NoLogOption, _noLogCheckBox.Checked);
     }
 
     private void WindowModeCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingUi)
-            return;
-
-        SetOptionLine(WindowModeExclusiveOption, _windowModeCheckBox.Checked);
+        if (!_isUpdatingUi)
+            SetOptionLine(WindowModeExclusiveOption, _windowModeCheckBox.Checked);
     }
 
     private void FullscreenCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingUi)
-            return;
-
-        SetOptionLine(ScreenFullscreenOption, _fullscreenCheckBox.Checked);
+        if (!_isUpdatingUi)
+            SetOptionLine(ScreenFullscreenOption, _fullscreenCheckBox.Checked);
     }
 
     private void ScreenQualityCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingUi)
-            return;
-
-        SetOptionLine(ScreenQualityLowOption, _screenQualityCheckBox.Checked);
+        if (!_isUpdatingUi)
+            SetOptionLine(ScreenQualityLowOption, _screenQualityCheckBox.Checked);
     }
 
-    private void FDiscordCheckBox_CheckedChanged(object? sender, EventArgs e)
+    private void DiscordCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingUi)
-            return;
+        if (!_isUpdatingUi)
+            SetOptionLine(FDiscordOption, _discordCheckBox.Checked);
+    }
 
-        SetOptionLine(FDiscordOption, _fdiscordCheckBox.Checked);
+    private void RuWeakHttpSecurityCheckBox_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (!_isUpdatingUi)
+            SetOptionLine(RuWeakHttpSecurityOption, _ruWeakHttpSecurityCheckBox.Checked);
     }
 
     private void LaunchOptionsTextBox_TextChanged(object? sender, EventArgs e)
     {
-        if (_isUpdatingUi)
-            return;
-
-        UpdateSelectionFromText();
+        if (!_isUpdatingUi)
+            UpdateSelectionFromText();
     }
 
     private void SetOptionLine(string option, bool enabled)
@@ -468,11 +555,6 @@ public partial class ScpSlLaunchOptionsTab : UserControl
             options.Insert(0, option);
 
         SetLaunchOptionsText(BuildLaunchOptionsText(options));
-    }
-
-    private void LoadLaunchOptions(string launchOptions)
-    {
-        SetLaunchOptionsText(launchOptions);
     }
 
     private void SetLaunchOptionsText(string text)
@@ -487,7 +569,15 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
     private void UpdateSelectionFromText()
     {
-        PopulateOptionsPanel();
+        var lines = new HashSet<string>(GetSelectedOptionsFromText(), StringComparer.OrdinalIgnoreCase);
+        _isUpdatingUi = true;
+        _noLogCheckBox.Checked = lines.Contains(NoLogOption);
+        _discordCheckBox.Checked = lines.Contains(FDiscordOption);
+        _fullscreenCheckBox.Checked = lines.Contains(ScreenFullscreenOption);
+        _windowModeCheckBox.Checked = lines.Contains(WindowModeExclusiveOption);
+        _screenQualityCheckBox.Checked = lines.Contains(ScreenQualityLowOption);
+        _ruWeakHttpSecurityCheckBox.Checked = lines.Contains(RuWeakHttpSecurityOption);
+        _isUpdatingUi = false;
     }
 
     private List<string> GetSelectedOptionsFromText()
@@ -530,6 +620,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
             line = ExtractKnownOption(line, WindowModeExclusiveOption, result, seen);
             line = ExtractKnownOption(line, ScreenQualityLowOption, result, seen);
+            line = ExtractKnownOption(line, RuWeakHttpSecurityOption, result, seen);
             line = ExtractKnownOption(line, NoLogOption, result, seen);
             line = ExtractKnownOption(line, ScreenFullscreenOption, result, seen);
             line = ExtractKnownOption(line, FDiscordOption, result, seen);
@@ -565,7 +656,9 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
     private static string NormalizeWhitespace(string text)
     {
-        return string.Join(" ", text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return string.Join(
+            " ",
+            text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
     private void ShowHelpDialog()
@@ -573,7 +666,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         MessageBox.Show(
             "Эта вкладка работает с LaunchOptions внутри localconfig.vdf для SCP: Secret Laboratory.\n\n" +
             "Большое окно показывает реальные параметры запуска из файла. Каждая строка в этом окне - отдельная команда запуска.\n\n" +
-            "Готовые пункты ниже просто добавляют или убирают стандартные строки в этом окне. После нажатия на 'Применить' твикер записывает содержимое окна обратно в localconfig.vdf.",
+            "Твикер не меняет файлы игры, не трогает память процесса и не автоматизирует игру. Перед записью localconfig.vdf создаётся бэкап.",
             "Как это работает?",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -583,7 +676,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
     {
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
-        await Task.Delay(2000);
+        await Task.Delay(2500);
         _statusLabel.Text = string.Empty;
     }
 }

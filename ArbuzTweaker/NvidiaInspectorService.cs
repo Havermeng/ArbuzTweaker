@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -13,6 +14,7 @@ public sealed class NvidiaInspectorService
     private const string Repo = "nvidiaProfileInspector";
     private const string AssetName = "nvidiaProfileInspector.zip";
     private const string VersionFileName = ".version";
+    private static readonly TimeSpan NetworkTimeout = TimeSpan.FromSeconds(90);
 
     private readonly string _installDirectory;
 
@@ -47,7 +49,10 @@ public sealed class NvidiaInspectorService
     {
         try
         {
-            using var client = new HttpClient();
+            using var client = new HttpClient
+            {
+                Timeout = NetworkTimeout
+            };
             client.DefaultRequestHeaders.UserAgent.ParseAdd("ArbuzTweaker");
 
             var metadataJson = await client.GetStringAsync($"https://api.github.com/repos/{Owner}/{Repo}/releases/latest");
@@ -72,9 +77,17 @@ public sealed class NvidiaInspectorService
             var tempRoot = Path.Combine(Path.GetTempPath(), "ArbuzTweaker-NvidiaInspector");
             var zipPath = Path.Combine(tempRoot, AssetName);
             var extractPath = Path.Combine(tempRoot, "extracted");
+            var stagingInstallDirectory = _installDirectory + ".new";
+            var backupInstallDirectory = _installDirectory + ".old";
 
             if (Directory.Exists(tempRoot))
                 Directory.Delete(tempRoot, true);
+
+            if (Directory.Exists(stagingInstallDirectory))
+                Directory.Delete(stagingInstallDirectory, true);
+
+            if (Directory.Exists(backupInstallDirectory))
+                Directory.Delete(backupInstallDirectory, true);
 
             Directory.CreateDirectory(tempRoot);
             Directory.CreateDirectory(extractPath);
@@ -85,40 +98,71 @@ public sealed class NvidiaInspectorService
                 await zipStream.CopyToAsync(fileStream);
             }
 
+            var archiveSha256 = ComputeSha256(zipPath);
+
             ZipFile.ExtractToDirectory(zipPath, extractPath, true);
 
-            if (Directory.Exists(_installDirectory))
-                Directory.Delete(_installDirectory, true);
-
-            Directory.CreateDirectory(_installDirectory);
+            Directory.CreateDirectory(stagingInstallDirectory);
 
             foreach (var directory in Directory.GetDirectories(extractPath, "*", SearchOption.AllDirectories))
             {
                 var relative = Path.GetRelativePath(extractPath, directory);
-                Directory.CreateDirectory(Path.Combine(_installDirectory, relative));
+                Directory.CreateDirectory(Path.Combine(stagingInstallDirectory, relative));
             }
 
             foreach (var file in Directory.GetFiles(extractPath, "*", SearchOption.AllDirectories))
             {
                 var relative = Path.GetRelativePath(extractPath, file);
-                var destination = Path.Combine(_installDirectory, relative);
+                var destination = Path.Combine(stagingInstallDirectory, relative);
                 var destinationDir = Path.GetDirectoryName(destination);
                 if (!string.IsNullOrWhiteSpace(destinationDir))
                     Directory.CreateDirectory(destinationDir);
                 File.Copy(file, destination, true);
             }
 
-            File.WriteAllText(Path.Combine(_installDirectory, VersionFileName), tagName);
+            File.WriteAllText(Path.Combine(stagingInstallDirectory, VersionFileName), tagName);
 
-            if (!File.Exists(ExecutablePath))
+            var stagedExecutablePath = Path.Combine(stagingInstallDirectory, "nvidiaProfileInspector.exe");
+            if (!File.Exists(stagedExecutablePath))
+            {
+                Directory.Delete(stagingInstallDirectory, true);
                 return ThirdPartyToolInstallResult.Failure("Архив скачан, но nvidiaProfileInspector.exe не найден после распаковки.");
+            }
 
-            return ThirdPartyToolInstallResult.Success($"NVIDIA Inspector установлен ({tagName}).");
+            var backupCreated = false;
+            try
+            {
+                if (Directory.Exists(_installDirectory))
+                {
+                    Directory.Move(_installDirectory, backupInstallDirectory);
+                    backupCreated = true;
+                }
+
+                Directory.Move(stagingInstallDirectory, _installDirectory);
+            }
+            catch
+            {
+                if (backupCreated && !Directory.Exists(_installDirectory) && Directory.Exists(backupInstallDirectory))
+                    Directory.Move(backupInstallDirectory, _installDirectory);
+
+                throw;
+            }
+
+            if (Directory.Exists(backupInstallDirectory))
+                Directory.Delete(backupInstallDirectory, true);
+
+            return ThirdPartyToolInstallResult.Success($"NVIDIA Inspector установлен ({tagName}). SHA256 архива: {archiveSha256}");
         }
         catch (Exception ex)
         {
             return ThirdPartyToolInstallResult.Failure($"Не удалось установить NVIDIA Inspector: {ex.Message}");
         }
+    }
+
+    private static string ComputeSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        return Convert.ToHexString(SHA256.HashData(stream));
     }
 
     public bool OpenInstallFolder()
