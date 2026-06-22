@@ -1,14 +1,14 @@
-using System.Windows.Forms;
-
 namespace ArbuzTweaker;
 
 public partial class ScpSlTab : UserControl
 {
     private readonly ScpSlService _scpSlService;
+    private readonly AppSettingsService _appSettingsService;
 
-    public ScpSlTab()
+    public ScpSlTab(ScpSlService scpSlService, AppSettingsService appSettingsService)
     {
-        _scpSlService = new ScpSlService();
+        _scpSlService = scpSlService;
+        _appSettingsService = appSettingsService;
         InitializeComponent();
     }
 
@@ -26,13 +26,6 @@ public partial class ScpSlTab : UserControl
             ForeColor = Color.White
         };
 
-        var bootConfigPage = new TabPage
-        {
-            Text = "boot.config",
-            BackColor = Color.FromArgb(35, 35, 35),
-            ForeColor = Color.White
-        };
-
         var commandBindingsPage = new TabPage
         {
             Text = "Бинды команд",
@@ -40,27 +33,17 @@ public partial class ScpSlTab : UserControl
             ForeColor = Color.White
         };
 
-        var launchOptionsTab = new ScpSlLaunchOptionsTab(_scpSlService)
+        launchOptionsPage.Controls.Add(new ScpSlLaunchOptionsTab(_scpSlService, _appSettingsService)
         {
             Dock = DockStyle.Fill
-        };
+        });
 
-        var bootConfigTab = new ScpSlBootConfigTab(_scpSlService)
+        commandBindingsPage.Controls.Add(new ScpSlCommandBindingsTab(_scpSlService)
         {
             Dock = DockStyle.Fill
-        };
-
-        var commandBindingsTab = new ScpSlCommandBindingsTab(_scpSlService)
-        {
-            Dock = DockStyle.Fill
-        };
-
-        launchOptionsPage.Controls.Add(launchOptionsTab);
-        bootConfigPage.Controls.Add(bootConfigTab);
-        commandBindingsPage.Controls.Add(commandBindingsTab);
+        });
 
         tabControl.TabPages.Add(launchOptionsPage);
-        tabControl.TabPages.Add(bootConfigPage);
         tabControl.TabPages.Add(commandBindingsPage);
 
         Controls.Add(tabControl);

@@ -28,16 +28,31 @@ public class ConfigService
 
     public async Task<string> LoadConfigAsync(string configName)
     {
-        var path = Path.Combine(_configsPath, configName);
-        if (File.Exists(path))
-            return await File.ReadAllTextAsync(path);
+        try
+        {
+            Directory.CreateDirectory(_configsPath);
+            var path = Path.Combine(_configsPath, configName);
+            if (File.Exists(path))
+                return await File.ReadAllTextAsync(path);
+        }
+        catch
+        {
+        }
+
         return string.Empty;
     }
 
     public async Task SaveConfigAsync(string configName, string content)
     {
-        var path = Path.Combine(_configsPath, configName);
-        await File.WriteAllTextAsync(path, content);
+        try
+        {
+            Directory.CreateDirectory(_configsPath);
+            var path = Path.Combine(_configsPath, configName);
+            await File.WriteAllTextAsync(path, content);
+        }
+        catch
+        {
+        }
     }
 
     public bool ConfigExists(string configName)

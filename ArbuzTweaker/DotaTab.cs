@@ -9,6 +9,8 @@ namespace ArbuzTweaker;
 
 public partial class DotaTab : UserControl
 {
+    private const int MaxFpsLimitValue = 999;
+
     private static readonly ConfigCommandGroupDefinition[] CommandGroups =
     {
         new(
@@ -16,8 +18,8 @@ public partial class DotaTab : UserControl
             new[]
             {
                 new ConfigCommandDefinition("dota_cheap_water 1", "Упрощает отрисовку воды в реке."),
-                new ConfigCommandDefinition("fps_max 240", "Ограничивает FPS в игре."),
-                new ConfigCommandDefinition("fps_max_menu 120", "Ограничивает FPS в меню."),
+                new ConfigCommandDefinition("fps_max", 240, "Ограничивает FPS в игре."),
+                new ConfigCommandDefinition("fps_max_menu", 120, "Ограничивает FPS в меню."),
                 new ConfigCommandDefinition("cl_globallight_shadow_mode 0", "Отключает или упрощает глобальные тени."),
                 new ConfigCommandDefinition("mat_queue_mode 2", "Включает многопоточную обработку рендера, если параметр поддерживается."),
                 new ConfigCommandDefinition("mat_picmip 2", "Снижает качество текстур."),
@@ -37,10 +39,19 @@ public partial class DotaTab : UserControl
                 new ConfigCommandDefinition("cl_interp_ratio 1", "Снижает коэффициент интерполяции." )
             }),
         new(
+            "Картинка и резкость",
+            new[]
+            {
+                new ConfigCommandDefinition("mat_viewportscale 0.999999", "Рендерит почти в полном масштабе: картинка становится четче и резче, но может заметно снизить FPS."),
+                new ConfigCommandDefinition("r_dota_fsr_upsample 2", "Выставляет FSR-апскейл в режим 2 для более резкой картинки."),
+                new ConfigCommandDefinition("r_dota_fsr_rcas_sharpness 0", "Ставит резкость RCAS в 0 для связки с FSR-настройкой.")
+            }),
+        new(
             "Интерфейс",
             new[]
             {
                 new ConfigCommandDefinition("dota_hud_enable_dispel_effect 1", "Показывает надпись DISPEL при развеивании эффекта."),
+                new ConfigCommandDefinition("dota_health_hurt_threshold 1", "Полоска здоровья уменьшается сразу, без заметной задержки после получения урона."),
                 new ConfigCommandDefinition("net_graph 1", "Включает net_graph с сетевой информацией."),
                 new ConfigCommandDefinition("net_graphheight 64", "Задает высоту net_graph."),
                 new ConfigCommandDefinition("net_graphinsetbottom 425", "Задает отступ net_graph снизу."),
@@ -54,6 +65,7 @@ public partial class DotaTab : UserControl
             {
                 new ConfigCommandDefinition("cl_interp 0.01", "Задает минимальное значение интерполяции клиента."),
                 new ConfigCommandDefinition("cl_lagcompensation 1", "Включает серверную компенсацию задержки."),
+                new ConfigCommandDefinition("cl_clock_recvmargin_enable 0", "Отключает recvmargin для снижения задержки ввода; эффект зависит от сети и сервера."),
                 new ConfigCommandDefinition("cl_pred_optimize 2", "Включает более агрессивную оптимизацию клиентского предсказания сети."),
                 new ConfigCommandDefinition("cl_smooth 1", "Включает сглаживание обзора после ошибок предсказания клиента."),
                 new ConfigCommandDefinition("cl_smoothtime 0.01", "Задает длительность сглаживания после ошибок предсказания клиента."),
@@ -72,8 +84,7 @@ public partial class DotaTab : UserControl
                 new ConfigCommandDefinition("r_ssao 0", "Отключает SSAO."),
                 new ConfigCommandDefinition("r_dota_allow_wind_on_trees 0", "Отключает анимацию ветра на деревьях."),
                 new ConfigCommandDefinition("r_dota_allow_parallax_mapping 0", "Отключает parallax mapping у материалов."),
-                new ConfigCommandDefinition("r_depth_of_field 0", "Отключает depth of field."),
-                new ConfigCommandDefinition("r_dota_fsr_upsample 1", "Включает FSR-апскейлинг, если он поддерживается текущей сборкой.")
+                new ConfigCommandDefinition("r_depth_of_field 0", "Отключает depth of field.")
             }),
         new(
             "Остальное",
@@ -91,38 +102,39 @@ public partial class DotaTab : UserControl
         .SelectMany(group => group.Commands)
         .ToArray();
 
-    private static readonly HashSet<string> NetworkSensitiveCommands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "cl_interp 0.01",
-        "cl_lagcompensation 1",
-        "cl_pred_optimize 2",
-        "cl_smooth 1",
-        "cl_smoothtime 0.01",
-        "cl_spectator_cmdrate_factor 0.5"
-    };
-
     private static readonly string[] LegacyManagedLaunchOptions = { "-console", "-novid" };
 
     private readonly ConfigService _configService;
     private readonly Dota2Service _dota2Service;
+    private readonly AppSettingsService _appSettingsService;
+    private readonly FileBackupService _fileBackupService;
     private readonly string _configFileName = "dota2_config.json";
     private readonly Dictionary<string, CheckBox> _commandCheckBoxes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, NumericUpDown> _numericCommandInputs = new(StringComparer.OrdinalIgnoreCase);
     private TextBox _autoexecTextBox = null!;
+    private TextBox _commandSearchTextBox = null!;
     private Panel _commandPanel = null!;
     private Button _saveButton = null!;
     private Button _resetButton = null!;
     private Button _helpButton = null!;
     private Button _openAutoexecButton = null!;
+    private Button _restoreBackupButton = null!;
     private Label _statusLabel = null!;
     private Label _pathLabel = null!;
     private bool _pathFound;
     private bool _isUpdatingAutoexecUi;
     private string _lastSavedAutoexecText = string.Empty;
 
-    public DotaTab(ConfigService configService, Dota2Service dota2Service)
+    public DotaTab(
+        ConfigService configService,
+        Dota2Service dota2Service,
+        AppSettingsService appSettingsService,
+        FileBackupService fileBackupService)
     {
         _configService = configService;
         _dota2Service = dota2Service;
+        _appSettingsService = appSettingsService;
+        _fileBackupService = fileBackupService;
         InitializeComponent();
         LoadPathsAsync();
     }
@@ -174,13 +186,13 @@ public partial class DotaTab : UserControl
             ForeColor = Color.White
         };
 
-        var launchOptionsControl = new DotaLaunchOptionsTab(_configService, _dota2Service)
+        var launchOptionsControl = new DotaLaunchOptionsTab(_configService, _dota2Service, _appSettingsService)
         {
             Dock = DockStyle.Fill
         };
         launchOptionsPage.Controls.Add(launchOptionsControl);
 
-        var videoConfigControl = new DotaVideoConfigTab(_dota2Service)
+        var videoConfigControl = new DotaVideoConfigTab(_dota2Service, _appSettingsService)
         {
             Dock = DockStyle.Fill
         };
@@ -189,19 +201,21 @@ public partial class DotaTab : UserControl
         var configLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(20),
+            AutoScroll = false,
+            Padding = new Padding(20, 10, 20, 20),
             ColumnCount = 1,
-            RowCount = 10
+            RowCount = 11
         };
         configLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         configLayout.RowStyles.Add(new RowStyle());
         configLayout.RowStyles.Add(new RowStyle());
         configLayout.RowStyles.Add(new RowStyle());
         configLayout.RowStyles.Add(new RowStyle());
-        configLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 40F));
+        configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 220F));
         configLayout.RowStyles.Add(new RowStyle());
         configLayout.RowStyles.Add(new RowStyle());
-        configLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 60F));
+        configLayout.RowStyles.Add(new RowStyle());
+        configLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         configLayout.RowStyles.Add(new RowStyle());
         configLayout.RowStyles.Add(new RowStyle());
 
@@ -243,10 +257,12 @@ public partial class DotaTab : UserControl
             Dock = DockStyle.Fill,
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 10),
+            WordWrap = false,
+            AcceptsTab = true,
             MinimumSize = new Size(0, 220),
             Margin = new Padding(0, 0, 0, 12)
         };
+        UiTheme.StyleEditorTextBox(_autoexecTextBox);
         _autoexecTextBox.TextChanged += AutoexecTextBox_TextChanged;
 
         var commandLabel = new Label
@@ -266,20 +282,21 @@ public partial class DotaTab : UserControl
             Margin = new Padding(0, 0, 0, 10)
         };
 
+        var commandSearchPanel = CreateCommandSearchPanel();
+
         _commandPanel = new Panel
         {
             Dock = DockStyle.Fill,
             AutoScroll = true,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.FromArgb(35, 35, 35),
             Margin = new Padding(0, 0, 0, 12)
         };
+        UiTheme.StyleListPanel(_commandPanel);
         _commandPanel.Resize += (s, e) => PopulateCommandPanel();
         PopulateCommandPanel();
 
         var buttonsPanel = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
             WrapContents = true,
             FlowDirection = FlowDirection.LeftToRight,
@@ -287,20 +304,30 @@ public partial class DotaTab : UserControl
         };
 
         _saveButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
-        _saveButton.Click += async (s, e) => await SaveConfigAsync();
+        _saveButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveConfigAsync);
 
         _helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
         _helpButton.Click += (s, e) => ShowHelpDialog();
 
-        _openAutoexecButton = new Button { Text = $"Показать {Dota2Service.AutoexecFileName} в папке", Size = new Size(220, 35), Margin = new Padding(0, 0, 10, 0) };
-        _openAutoexecButton.Click += async (s, e) => await OpenAutoexecFolderAsync();
+        _openAutoexecButton = new Button { Text = $"Показать {Dota2Service.AutoexecFileName}", Size = new Size(220, 35), Margin = new Padding(0, 0, 10, 0) };
+        _openAutoexecButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, OpenAutoexecFolderAsync);
 
-        _resetButton = new Button { Text = "Сбросить", Size = new Size(120, 35), Margin = new Padding(0) };
-        _resetButton.Click += async (s, e) => await ResetConfigAsync();
+        _restoreBackupButton = new Button { Text = "Восстановить бэкап", Size = new Size(180, 35), Margin = new Padding(0, 0, 10, 0) };
+        _restoreBackupButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, OpenDotaBackupsAsync);
+
+        _resetButton = new Button { Text = "Сбросить к базовому", Size = new Size(205, 35), Margin = new Padding(0) };
+        _resetButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ResetConfigAsync);
+
+        UiTheme.StyleActionButton(_saveButton, true);
+        UiTheme.StyleActionButton(_helpButton);
+        UiTheme.StyleActionButton(_openAutoexecButton);
+        UiTheme.StyleActionButton(_restoreBackupButton);
+        UiTheme.StyleActionButton(_resetButton);
 
         buttonsPanel.Controls.Add(_saveButton);
         buttonsPanel.Controls.Add(_helpButton);
         buttonsPanel.Controls.Add(_openAutoexecButton);
+        buttonsPanel.Controls.Add(_restoreBackupButton);
         buttonsPanel.Controls.Add(_resetButton);
 
         _statusLabel = new Label
@@ -318,9 +345,10 @@ public partial class DotaTab : UserControl
         configLayout.Controls.Add(_autoexecTextBox, 0, 4);
         configLayout.Controls.Add(commandLabel, 0, 5);
         configLayout.Controls.Add(commandHintLabel, 0, 6);
-        configLayout.Controls.Add(_commandPanel, 0, 7);
-        configLayout.Controls.Add(buttonsPanel, 0, 8);
-        configLayout.Controls.Add(_statusLabel, 0, 9);
+        configLayout.Controls.Add(commandSearchPanel, 0, 7);
+        configLayout.Controls.Add(_commandPanel, 0, 8);
+        configLayout.Controls.Add(buttonsPanel, 0, 9);
+        configLayout.Controls.Add(_statusLabel, 0, 10);
 
         configPage.Controls.Add(configLayout);
 
@@ -328,6 +356,50 @@ public partial class DotaTab : UserControl
         tabControl.TabPages.Add(configPage);
         tabControl.TabPages.Add(videoConfigPage);
         Controls.Add(tabControl);
+    }
+
+    private FlowLayoutPanel CreateCommandSearchPanel()
+    {
+        var panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+
+        _commandSearchTextBox = new TextBox
+        {
+            Width = 360,
+            Margin = new Padding(0, 0, 8, 0)
+        };
+        UiTheme.StyleSearchTextBox(_commandSearchTextBox);
+        _commandSearchTextBox.KeyDown += (s, e) =>
+        {
+            if (e.KeyCode != Keys.Enter)
+                return;
+
+            e.SuppressKeyPress = true;
+            PopulateCommandPanel();
+        };
+
+        var searchButton = new Button { Text = "Найти", Size = new Size(100, 31), Margin = new Padding(0, 0, 8, 0) };
+        searchButton.Click += (s, e) => PopulateCommandPanel();
+        UiTheme.StyleActionButton(searchButton, true);
+
+        var clearButton = new Button { Text = "Сбросить поиск", Size = new Size(145, 31), Margin = new Padding(0) };
+        clearButton.Click += (s, e) =>
+        {
+            _commandSearchTextBox.Clear();
+            PopulateCommandPanel();
+        };
+        UiTheme.StyleActionButton(clearButton);
+
+        panel.Controls.Add(_commandSearchTextBox);
+        panel.Controls.Add(searchButton);
+        panel.Controls.Add(clearButton);
+        return panel;
     }
 
     private void PopulateCommandPanel()
@@ -341,74 +413,97 @@ public partial class DotaTab : UserControl
         _commandPanel.SuspendLayout();
         _commandPanel.Controls.Clear();
         _commandCheckBoxes.Clear();
+        _numericCommandInputs.Clear();
 
-        var y = 10;
-        var selectedCommands = new HashSet<string>(GetAutoexecLines(), StringComparer.OrdinalIgnoreCase);
-        var availableWidth = Math.Max(620, _commandPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 28);
-        var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.40), 240, 360);
-        var descriptionX = 18 + checkBoxWidth + 18;
-        var descriptionWidth = Math.Max(220, availableWidth - checkBoxWidth - 26);
+        var y = 8;
+        var autoexecLines = GetAutoexecLines();
+        var availableWidth = Math.Max(620, _commandPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 24);
+        var searchQuery = GetCommandSearchQuery();
+        var rowIndex = 0;
 
         foreach (var group in CommandGroups)
         {
-            var groupLabel = new Label
-            {
-                Text = group.Title,
-                Location = new Point(10, y),
-                AutoSize = true,
-                Font = new Font("Segoe UI", 9, FontStyle.Bold),
-                ForeColor = Color.White
-            };
-            _commandPanel.Controls.Add(groupLabel);
-            y += 24;
+            var commands = group.Commands
+                .Where(command => MatchesSearch(command.Command, command.Description, searchQuery))
+                .ToArray();
+            if (commands.Length == 0)
+                continue;
 
-            foreach (var command in group.Commands)
-            {
-                var checkBox = new CheckBox
-                {
-                    Text = command.Command,
-                    Location = new Point(18, y),
-                    Size = new Size(checkBoxWidth, 24),
-                    AutoSize = false,
-                    ForeColor = Color.White,
-                    Tag = command.Command,
-                    BackColor = Color.Transparent,
-                    Checked = selectedCommands.Contains(command.Command)
-                };
-                checkBox.CheckedChanged += CommandCheckBox_CheckedChanged;
+            y = UiTheme.AddListSectionHeader(_commandPanel, y, availableWidth, group.Title);
 
-                var descriptionFont = new Font("Segoe UI", 10);
-                var descriptionSize = TextRenderer.MeasureText(
+            foreach (var command in commands)
+            {
+                y = UiTheme.AddCheckListRow(
+                    _commandPanel,
+                    y,
+                    availableWidth,
+                    rowIndex,
+                    command.DisplayText,
                     command.Description,
-                    descriptionFont,
-                    new Size(descriptionWidth, int.MaxValue),
-                    TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
-
-                var descriptionLabel = new Label
-                {
-                    Text = command.Description,
-                    Location = new Point(descriptionX, y + 2),
-                    Size = new Size(descriptionWidth, Math.Max(28, descriptionSize.Height + 8)),
-                    AutoSize = false,
-                    UseMnemonic = false,
-                    TextAlign = ContentAlignment.TopLeft,
-                    Font = descriptionFont,
-                    ForeColor = Color.Gainsboro,
-                    BackColor = Color.Transparent
-                };
+                    TryGetCommandLine(autoexecLines, command, out _),
+                    CommandCheckBox_CheckedChanged,
+                    out var checkBox,
+                    command);
 
                 _commandCheckBoxes[command.Command] = checkBox;
-                _commandPanel.Controls.Add(checkBox);
-                _commandPanel.Controls.Add(descriptionLabel);
+                if (command.IsNumeric)
+                    AddNumericCommandInput(command, checkBox, autoexecLines);
 
-                y += Math.Max(checkBox.Height, descriptionLabel.Height) + 12;
+                rowIndex++;
             }
 
-            y += 6;
+            y += 10;
         }
 
+        if (rowIndex == 0)
+            UiTheme.AddEmptyListMessage(_commandPanel, y, availableWidth, "Ничего не найдено. Попробуй другую команду или слово из описания.");
+
         _commandPanel.ResumeLayout();
+        _commandPanel.AutoScrollMinSize = new Size(0, y + 12);
         _isUpdatingAutoexecUi = preserveState;
+    }
+
+    private string GetCommandSearchQuery()
+    {
+        return _commandSearchTextBox?.Text.Trim() ?? string.Empty;
+    }
+
+    private static bool MatchesSearch(string command, string description, string query)
+    {
+        return string.IsNullOrWhiteSpace(query)
+            || command.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || description.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void AddNumericCommandInput(ConfigCommandDefinition definition, CheckBox checkBox, IReadOnlyList<string> autoexecLines)
+    {
+        if (checkBox.Parent is not Panel rowPanel)
+            return;
+
+        var value = TryGetNumericCommandValue(autoexecLines, definition, out var currentValue)
+            ? currentValue
+            : definition.DefaultNumericValue;
+
+        checkBox.Width = Math.Min(155, checkBox.Width);
+
+        var input = new NumericUpDown
+        {
+            Minimum = 0,
+            Maximum = MaxFpsLimitValue,
+            Value = Math.Clamp(value, 0, MaxFpsLimitValue),
+            Size = new Size(58, 25),
+            Location = new Point(checkBox.Right + 8, 7),
+            TextAlign = HorizontalAlignment.Center,
+            Font = new Font("Segoe UI", 9.5F),
+            BackColor = UiTheme.SurfaceAlt,
+            ForeColor = UiTheme.TextPrimary,
+            BorderStyle = BorderStyle.FixedSingle,
+            Tag = definition
+        };
+
+        input.ValueChanged += NumericCommandInput_ValueChanged;
+        rowPanel.Controls.Add(input);
+        _numericCommandInputs[definition.Command] = input;
     }
 
     private async Task LoadConfigAsync()
@@ -442,9 +537,6 @@ public partial class DotaTab : UserControl
         if (!string.Equals(_autoexecTextBox.Text, normalizedAutoexecText, StringComparison.Ordinal))
             SetAutoexecText(normalizedAutoexecText);
 
-        if (HasNetworkSensitiveChanges(_lastSavedAutoexecText, normalizedAutoexecText) && !ConfirmNetworkSensitiveChange())
-            return;
-
         var selectedCommands = GetSelectedConfigCommands();
         await SaveStoredConfigAsync(selectedCommands, normalizedAutoexecText);
         _lastSavedAutoexecText = normalizedAutoexecText;
@@ -476,9 +568,6 @@ public partial class DotaTab : UserControl
             MessageBoxIcon.Question);
 
         if (confirmResult != DialogResult.Yes)
-            return;
-
-        if (HasNetworkSensitiveChanges(_lastSavedAutoexecText, string.Empty) && !ConfirmNetworkSensitiveChange())
             return;
 
         SetAutoexecText(string.Empty);
@@ -544,6 +633,17 @@ public partial class DotaTab : UserControl
         }
     }
 
+    private async Task OpenDotaBackupsAsync()
+    {
+        using var backupForm = new FileBackupBrowserForm(_fileBackupService, "Dota 2");
+        backupForm.ShowDialog(this);
+
+        var currentAutoexec = await _dota2Service.LoadAutoexecAsync();
+        SetAutoexecText(currentAutoexec ?? string.Empty);
+        _lastSavedAutoexecText = NormalizeAutoexecText(_autoexecTextBox.Text);
+        ShowStatus("Бэкапы закрыты. Конфиг перечитан", Color.Gray);
+    }
+
     private async Task ApplyChangesAsync(
         string autoexecContent,
         bool includeAutoexec,
@@ -586,8 +686,20 @@ public partial class DotaTab : UserControl
         if (_isUpdatingAutoexecUi)
             return;
 
-        if (sender is CheckBox checkBox && checkBox.Tag is string command)
-            SetCommandLine(command, checkBox.Checked);
+        if (sender is CheckBox checkBox && checkBox.Tag is ConfigCommandDefinition definition)
+            SetCommandLine(definition, checkBox.Checked);
+    }
+
+    private void NumericCommandInput_ValueChanged(object? sender, EventArgs e)
+    {
+        if (_isUpdatingAutoexecUi)
+            return;
+
+        if (sender is not NumericUpDown input || input.Tag is not ConfigCommandDefinition definition)
+            return;
+
+        if (_commandCheckBoxes.TryGetValue(definition.Command, out var checkBox) && checkBox.Checked)
+            SetCommandLine(definition, true);
     }
 
     private void AutoexecTextBox_TextChanged(object? sender, EventArgs e)
@@ -598,13 +710,13 @@ public partial class DotaTab : UserControl
         UpdateCommandSelectionFromAutoexec();
     }
 
-    private void SetCommandLine(string command, bool enabled)
+    private void SetCommandLine(ConfigCommandDefinition definition, bool enabled)
     {
-        var selectedCommands = new HashSet<string>(GetSelectedConfigCommands(), StringComparer.OrdinalIgnoreCase);
+        var selectedCommands = GetSelectedConfigCommands();
+        selectedCommands.RemoveAll(line => IsDefinitionCommand(definition, line));
+
         if (enabled)
-            selectedCommands.Add(command);
-        else
-            selectedCommands.Remove(command);
+            selectedCommands.Add(GetCommandForUi(definition));
 
         var customLines = GetCustomAutoexecLines();
         SetAutoexecText(BuildAutoexecText(selectedCommands, customLines));
@@ -622,13 +734,21 @@ public partial class DotaTab : UserControl
 
     private void UpdateCommandSelectionFromAutoexec()
     {
-        var autoexecLines = new HashSet<string>(GetAutoexecLines(), StringComparer.OrdinalIgnoreCase);
+        var autoexecLines = GetAutoexecLines();
         var previousState = _isUpdatingAutoexecUi;
         _isUpdatingAutoexecUi = true;
 
         foreach (var definition in AllCommandDefinitions)
         {
-            _commandCheckBoxes[definition.Command].Checked = autoexecLines.Contains(definition.Command);
+            if (_commandCheckBoxes.TryGetValue(definition.Command, out var checkBox))
+                checkBox.Checked = TryGetCommandLine(autoexecLines, definition, out _);
+
+            if (definition.IsNumeric
+                && _numericCommandInputs.TryGetValue(definition.Command, out var input)
+                && TryGetNumericCommandValue(autoexecLines, definition, out var value))
+            {
+                input.Value = Math.Clamp(value, 0, MaxFpsLimitValue);
+            }
         }
 
         _isUpdatingAutoexecUi = previousState;
@@ -637,11 +757,12 @@ public partial class DotaTab : UserControl
     private List<string> GetSelectedConfigCommands()
     {
         var result = new List<string>();
+        var autoexecLines = GetAutoexecLines();
 
         foreach (var definition in AllCommandDefinitions)
         {
-            if (_commandCheckBoxes[definition.Command].Checked)
-                result.Add(definition.Command);
+            if (TryGetCommandLine(autoexecLines, definition, out var commandLine))
+                result.Add(commandLine);
         }
 
         return result;
@@ -702,6 +823,9 @@ public partial class DotaTab : UserControl
 
         foreach (var definition in AllCommandDefinitions)
         {
+            if (definition.IsNumeric && TryNormalizeNumericCommand(definition, normalizedWhitespaceLine, out var numericCommand))
+                return numericCommand;
+
             if (string.Equals(normalizedWhitespaceLine, definition.Command, StringComparison.OrdinalIgnoreCase))
                 return definition.Command;
         }
@@ -716,11 +840,88 @@ public partial class DotaTab : UserControl
             line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
+    private string GetCommandForUi(ConfigCommandDefinition definition)
+    {
+        if (!definition.IsNumeric)
+            return definition.Command;
+
+        var value = definition.DefaultNumericValue;
+        if (_numericCommandInputs.TryGetValue(definition.Command, out var input))
+            value = (int)input.Value;
+
+        return definition.BuildNumericCommand(value);
+    }
+
+    private static bool TryGetCommandLine(IEnumerable<string> lines, ConfigCommandDefinition definition, out string commandLine)
+    {
+        foreach (var line in lines)
+        {
+            if (IsDefinitionCommand(definition, line))
+            {
+                commandLine = definition.IsNumeric && TryNormalizeNumericCommand(definition, line, out var numericCommand)
+                    ? numericCommand
+                    : definition.Command;
+                return true;
+            }
+        }
+
+        commandLine = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetNumericCommandValue(IEnumerable<string> lines, ConfigCommandDefinition definition, out int value)
+    {
+        foreach (var line in lines)
+        {
+            if (TryParseNumericCommand(definition, line, out value))
+                return true;
+        }
+
+        value = definition.DefaultNumericValue;
+        return false;
+    }
+
+    private static bool IsDefinitionCommand(ConfigCommandDefinition definition, string line)
+    {
+        return definition.IsNumeric
+            ? TryParseNumericCommand(definition, line, out _)
+            : string.Equals(definition.Command, line, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryNormalizeNumericCommand(ConfigCommandDefinition definition, string line, out string commandLine)
+    {
+        if (TryParseNumericCommand(definition, line, out var value))
+        {
+            commandLine = definition.BuildNumericCommand(value);
+            return true;
+        }
+
+        commandLine = string.Empty;
+        return false;
+    }
+
+    private static bool TryParseNumericCommand(ConfigCommandDefinition definition, string line, out int value)
+    {
+        value = definition.DefaultNumericValue;
+
+        if (!definition.IsNumeric)
+            return false;
+
+        var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || !string.Equals(parts[0], definition.CommandName, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (parts[1].Length > 3 || !int.TryParse(parts[1], out value))
+            return false;
+
+        return value is >= 0 and <= MaxFpsLimitValue;
+    }
+
     private bool IsPresetCommand(string line)
     {
         foreach (var definition in AllCommandDefinitions)
         {
-            if (string.Equals(definition.Command, line, StringComparison.OrdinalIgnoreCase))
+            if (IsDefinitionCommand(definition, line))
                 return true;
         }
 
@@ -740,6 +941,12 @@ public partial class DotaTab : UserControl
 
         foreach (var definition in AllCommandDefinitions)
         {
+            if (TryGetCommandLine(selectedSet, definition, out var commandLine))
+            {
+                result.Add(commandLine);
+                continue;
+            }
+
             if (selectedSet.Contains(definition.Command))
                 result.Add(definition.Command);
         }
@@ -773,37 +980,6 @@ public partial class DotaTab : UserControl
             MessageBoxIcon.Information);
     }
 
-    private bool HasNetworkSensitiveChanges(string oldText, string newText)
-    {
-        var oldCommands = ExtractNetworkSensitiveCommands(oldText);
-        var newCommands = ExtractNetworkSensitiveCommands(newText);
-
-        return !oldCommands.SetEquals(newCommands);
-    }
-
-    private HashSet<string> ExtractNetworkSensitiveCommands(string text)
-    {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var rawLine in text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
-        {
-            var normalizedLine = NormalizeConfigLine(rawLine);
-            if (NetworkSensitiveCommands.Contains(normalizedLine))
-                result.Add(normalizedLine);
-        }
-
-        return result;
-    }
-
-    private static bool ConfirmNetworkSensitiveChange()
-    {
-        return MessageBox.Show(
-            "Изменение этого параметра может негативно сказаться на интернет соединении! ПРОДОЛЖИТЬ?",
-            "Предупреждение",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning) == DialogResult.Yes;
-    }
-
     private async void ShowStatus(string message, Color color)
     {
         _statusLabel.Text = message;
@@ -831,11 +1007,36 @@ public partial class DotaTab : UserControl
         {
             Command = command;
             Description = description;
+            CommandName = command.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? command;
+            DisplayText = command;
+        }
+
+        public ConfigCommandDefinition(string commandName, int defaultNumericValue, string description)
+        {
+            CommandName = commandName;
+            DefaultNumericValue = Math.Clamp(defaultNumericValue, 0, MaxFpsLimitValue);
+            Command = BuildNumericCommand(DefaultNumericValue);
+            DisplayText = commandName;
+            Description = description;
+            IsNumeric = true;
         }
 
         public string Command { get; }
 
+        public string CommandName { get; }
+
+        public string DisplayText { get; }
+
         public string Description { get; }
+
+        public bool IsNumeric { get; }
+
+        public int DefaultNumericValue { get; }
+
+        public string BuildNumericCommand(int value)
+        {
+            return $"{CommandName} {Math.Clamp(value, 0, MaxFpsLimitValue)}";
+        }
     }
 }
 

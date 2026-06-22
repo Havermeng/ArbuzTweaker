@@ -22,7 +22,11 @@ public sealed class AppSettingsService
                 return new AppSettingsData();
 
             var content = File.ReadAllText(path);
-            return System.Text.Json.JsonSerializer.Deserialize<AppSettingsData>(content) ?? new AppSettingsData();
+            var settings = System.Text.Json.JsonSerializer.Deserialize<AppSettingsData>(content) ?? new AppSettingsData();
+            if (!settings.UnsafeTweaksRiskAccepted)
+                settings.SafeModeUserConfigOnly = true;
+
+            return settings;
         }
         catch
         {
@@ -34,11 +38,16 @@ public sealed class AppSettingsService
     {
         try
         {
+            var path = GetSettingsPath();
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
             var content = System.Text.Json.JsonSerializer.Serialize(
                 settings,
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
 
-            File.WriteAllText(GetSettingsPath(), content);
+            File.WriteAllText(path, content);
         }
         catch
         {
@@ -59,4 +68,11 @@ public sealed class AppSettingsData
     public int WindowWidth { get; set; }
     public int WindowHeight { get; set; }
     public bool WindowMaximized { get; set; }
+    public bool SafeModeUserConfigOnly { get; set; } = true;
+    public bool UnsafeTweaksRiskAccepted { get; set; }
+    public bool NvidiaOverlayPreLaunchDota2 { get; set; }
+    public bool NvidiaOverlayPreLaunchScpSl { get; set; }
+    public bool NvidiaOverlayPreLaunchCustomProgram { get; set; }
+    public string NvidiaOverlayPreLaunchCustomProgramPath { get; set; } = string.Empty;
+    public string PreferredSteamAccountId32 { get; set; } = string.Empty;
 }

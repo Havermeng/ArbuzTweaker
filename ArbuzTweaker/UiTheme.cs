@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace ArbuzTweaker;
@@ -51,6 +52,131 @@ internal static class UiTheme
         button.Cursor = Cursors.Hand;
     }
 
+    public static void StyleEditorTextBox(TextBox textBox)
+    {
+        textBox.BackColor = Color.FromArgb(24, 24, 24);
+        textBox.ForeColor = TextPrimary;
+        textBox.BorderStyle = BorderStyle.FixedSingle;
+        textBox.Font = new Font("Consolas", 10);
+        textBox.HideSelection = false;
+    }
+
+    public static void StyleSearchTextBox(TextBox textBox)
+    {
+        textBox.BackColor = Color.FromArgb(24, 24, 24);
+        textBox.ForeColor = TextPrimary;
+        textBox.BorderStyle = BorderStyle.FixedSingle;
+        textBox.Font = new Font("Segoe UI", 10);
+    }
+
+    public static void StyleListPanel(Panel panel)
+    {
+        panel.BorderStyle = BorderStyle.None;
+        panel.BackColor = Surface;
+    }
+
+    public static int AddListSectionHeader(Panel panel, int y, int width, string text)
+    {
+        var label = new Label
+        {
+            Text = text,
+            Location = new Point(8, y),
+            Size = new Size(width, 28),
+            AutoSize = false,
+            Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Regular),
+            ForeColor = AccentGreen,
+            BackColor = SurfaceAlt,
+            Padding = new Padding(8, 5, 0, 0)
+        };
+
+        panel.Controls.Add(label);
+        return y + 34;
+    }
+
+    public static int AddCheckListRow(
+        Panel panel,
+        int y,
+        int availableWidth,
+        int rowIndex,
+        string command,
+        string description,
+        bool isChecked,
+        EventHandler checkedChanged,
+        out CheckBox checkBox,
+        object? tag = null,
+        bool highlighted = false)
+    {
+        var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.40), 240, 360);
+        var descriptionX = checkBoxWidth + 24;
+        var descriptionWidth = Math.Max(220, availableWidth - checkBoxWidth - 36);
+        var descriptionFont = new Font("Segoe UI", 9.5F);
+        var descriptionSize = TextRenderer.MeasureText(
+            description,
+            descriptionFont,
+            new Size(descriptionWidth, int.MaxValue),
+            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
+        var rowHeight = Math.Max(42, descriptionSize.Height + 18);
+
+        var rowPanel = new Panel
+        {
+            Location = new Point(8, y),
+            Size = new Size(availableWidth, rowHeight),
+            BackColor = highlighted
+                ? Color.FromArgb(45, 70, 90)
+                : rowIndex % 2 == 0
+                    ? Color.FromArgb(38, 38, 38)
+                    : Color.FromArgb(32, 32, 32),
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        checkBox = new CheckBox
+        {
+            Text = command,
+            Location = new Point(10, 9),
+            Size = new Size(checkBoxWidth, rowHeight - 16),
+            AutoSize = false,
+            ForeColor = TextPrimary,
+            Tag = tag ?? command,
+            BackColor = Color.Transparent,
+            UseMnemonic = false,
+            Checked = isChecked
+        };
+        checkBox.CheckedChanged += checkedChanged;
+
+        var descriptionLabel = new Label
+        {
+            Text = description,
+            Location = new Point(descriptionX, 8),
+            Size = new Size(descriptionWidth, rowHeight - 14),
+            AutoSize = false,
+            UseMnemonic = false,
+            TextAlign = ContentAlignment.TopLeft,
+            Font = descriptionFont,
+            ForeColor = TextMuted,
+            BackColor = Color.Transparent
+        };
+
+        rowPanel.Controls.Add(checkBox);
+        rowPanel.Controls.Add(descriptionLabel);
+        panel.Controls.Add(rowPanel);
+
+        return y + rowHeight + 6;
+    }
+
+    public static void AddEmptyListMessage(Panel panel, int y, int width, string text)
+    {
+        panel.Controls.Add(new Label
+        {
+            Text = text,
+            Location = new Point(8, y),
+            Size = new Size(width, 42),
+            AutoSize = false,
+            ForeColor = TextDim,
+            BackColor = SurfaceAlt,
+            Padding = new Padding(10, 10, 0, 0)
+        });
+    }
+
     public static Panel CreateSectionPanel()
     {
         return new Panel
@@ -75,6 +201,38 @@ internal static class UiTheme
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 10)
         };
+    }
+
+    public static async Task RunButtonOperationAsync(object? sender, Func<Task> operation)
+    {
+        if (sender is not Control control)
+        {
+            await operation();
+            return;
+        }
+
+        if (!control.Enabled)
+            return;
+
+        var form = control.FindForm();
+        var previousCursor = control.Cursor;
+        control.Enabled = false;
+        control.Cursor = Cursors.WaitCursor;
+        if (form != null)
+            form.UseWaitCursor = true;
+
+        try
+        {
+            await operation();
+        }
+        finally
+        {
+            if (form != null)
+                form.UseWaitCursor = false;
+
+            control.Cursor = previousCursor;
+            control.Enabled = true;
+        }
     }
 
     private static Image GetSidebarIcon(string key)
@@ -109,6 +267,9 @@ internal static class UiTheme
                     return scpIcon;
                 DrawScpIcon(graphics);
                 break;
+            case "Прицел":
+                DrawCrosshairIcon(graphics);
+                break;
             case "Стороннее ПО":
                 DrawSettingsIcon(graphics);
                 break;
@@ -127,29 +288,41 @@ internal static class UiTheme
     {
         try
         {
-            var shortcutPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Microsoft",
-                "Windows",
-                "Start Menu",
-                "Programs",
-                "Steam",
-                shortcutName + ".url");
-
-            if (!File.Exists(shortcutPath))
-                return null;
-
-            foreach (var line in File.ReadAllLines(shortcutPath))
+            var shortcutPaths = new[]
             {
-                if (!line.StartsWith("IconFile=", StringComparison.OrdinalIgnoreCase))
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Microsoft",
+                    "Windows",
+                    "Start Menu",
+                    "Programs",
+                    "Steam",
+                    shortcutName + ".url"),
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                    shortcutName + ".url"),
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory),
+                    shortcutName + ".url")
+            };
+
+            foreach (var shortcutPath in shortcutPaths)
+            {
+                if (!File.Exists(shortcutPath))
                     continue;
 
-                var iconPath = line.Substring("IconFile=".Length).Trim();
-                if (!File.Exists(iconPath))
-                    return null;
+                foreach (var line in File.ReadAllLines(shortcutPath))
+                {
+                    if (!line.StartsWith("IconFile=", StringComparison.OrdinalIgnoreCase))
+                        continue;
 
-                using var icon = new Icon(iconPath, new Size(18, 18));
-                return icon.ToBitmap();
+                    var iconPath = line.Substring("IconFile=".Length).Trim();
+                    if (!File.Exists(iconPath))
+                        return null;
+
+                    using var icon = new Icon(iconPath, new Size(18, 18));
+                    return icon.ToBitmap();
+                }
             }
         }
         catch
@@ -209,22 +382,20 @@ internal static class UiTheme
 
     private static void DrawScpIcon(Graphics g)
     {
-        using var darkBrush = new SolidBrush(Color.FromArgb(28, 28, 28));
-        using var outlinePen = new Pen(Color.FromArgb(220, 228, 235), 1.2F);
-        using var symbolPen = new Pen(Color.FromArgb(220, 228, 235), 1.3F);
-        using var font = new Font("Segoe UI", 4.6F, FontStyle.Bold, GraphicsUnit.Point);
-        using var textBrush = new SolidBrush(Color.FromArgb(235, 240, 245));
+        using var backgroundBrush = new SolidBrush(Color.FromArgb(28, 28, 32));
+        using var borderPen = new Pen(Color.FromArgb(230, 230, 230), 1.2F);
+        using var linePen = new Pen(Color.FromArgb(230, 230, 230), 1.5F);
+        using var accentPen = new Pen(Color.FromArgb(50, 155, 255), 1.2F);
 
-        g.FillRectangle(darkBrush, 1, 1, 16, 16);
-        g.DrawRectangle(outlinePen, 1, 1, 16, 16);
-        g.DrawString("SCP", font, textBrush, new PointF(2.1F, 1.1F));
-
-        g.DrawEllipse(symbolPen, 4.5F, 6.0F, 9.0F, 9.0F);
-        g.DrawLine(symbolPen, 9.0F, 6.0F, 9.0F, 9.4F);
-        g.DrawLine(symbolPen, 4.9F, 10.5F, 13.1F, 10.5F);
-        g.DrawArc(symbolPen, 5.5F, 6.8F, 7.0F, 7.0F, 218, 86);
-        g.DrawArc(symbolPen, 5.5F, 6.8F, 7.0F, 7.0F, 338, 86);
-        g.DrawArc(symbolPen, 5.5F, 6.8F, 7.0F, 7.0F, 98, 86);
+        g.FillRectangle(backgroundBrush, 2.5F, 2.5F, 13.0F, 13.0F);
+        g.DrawRectangle(borderPen, 2.5F, 2.5F, 13.0F, 13.0F);
+        g.DrawEllipse(borderPen, 5.0F, 5.0F, 8.0F, 8.0F);
+        g.DrawLine(linePen, 4.0F, 9.0F, 7.2F, 9.0F);
+        g.DrawLine(linePen, 10.8F, 9.0F, 14.0F, 9.0F);
+        g.DrawLine(linePen, 9.0F, 4.0F, 9.0F, 7.2F);
+        g.DrawLine(linePen, 9.0F, 10.8F, 9.0F, 14.0F);
+        g.DrawArc(accentPen, 3.5F, 3.5F, 11.0F, 11.0F, 210, 55);
+        g.DrawArc(accentPen, 3.5F, 3.5F, 11.0F, 11.0F, 25, 55);
     }
 
     private static void DrawToolsIcon(Graphics g)
@@ -240,6 +411,20 @@ internal static class UiTheme
         g.FillRectangle(darkBrush, 7.1F, 9.2F, 3.8F, 1.7F);
         g.DrawRectangle(borderPen, 2.5F, 6.5F, 13.0F, 8.0F);
         g.DrawRectangle(borderPen, 4.5F, 4.5F, 9.0F, 3.0F);
+    }
+
+    private static void DrawCrosshairIcon(Graphics g)
+    {
+        using var outerPen = new Pen(Color.FromArgb(220, 220, 220), 1.3F);
+        using var accentPen = new Pen(Color.FromArgb(76, 176, 255), 1.6F);
+        using var dotBrush = new SolidBrush(Color.FromArgb(76, 176, 255));
+
+        g.DrawEllipse(outerPen, 3.0F, 3.0F, 12.0F, 12.0F);
+        g.DrawLine(accentPen, 1.5F, 9.0F, 6.2F, 9.0F);
+        g.DrawLine(accentPen, 11.8F, 9.0F, 16.5F, 9.0F);
+        g.DrawLine(accentPen, 9.0F, 1.5F, 9.0F, 6.2F);
+        g.DrawLine(accentPen, 9.0F, 11.8F, 9.0F, 16.5F);
+        g.FillEllipse(dotBrush, 7.6F, 7.6F, 2.8F, 2.8F);
     }
 
     private static void DrawSettingsIcon(Graphics g)
@@ -262,18 +447,29 @@ internal static class UiTheme
 
     private static void DrawGearIcon(Graphics g)
     {
-        using var shadowBrush = new SolidBrush(Color.FromArgb(90, 8, 12, 24));
-        using var iconBrush = new SolidBrush(Color.FromArgb(210, 236, 255));
-        using var font = new Font("Segoe MDL2 Assets", 15.5F, FontStyle.Regular, GraphicsUnit.Pixel);
-        using var format = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center
-        };
+        using var shadowBrush = new SolidBrush(Color.FromArgb(80, 8, 12, 24));
+        using var gearBrush = new SolidBrush(Color.FromArgb(196, 204, 212));
+        using var innerRingBrush = new SolidBrush(Color.FromArgb(34, 76, 112));
+        using var centerBrush = new SolidBrush(Color.FromArgb(76, 176, 255));
 
-        var glyph = char.ConvertFromUtf32(0xE713);
-        g.DrawString(glyph, font, shadowBrush, new RectangleF(1.0F, 1.0F, 18.0F, 18.0F), format);
-        g.DrawString(glyph, font, iconBrush, new RectangleF(0.0F, 0.0F, 18.0F, 18.0F), format);
+        FillGearShape(g, shadowBrush, 9.7F, 9.8F);
+        FillGearShape(g, gearBrush, 9.0F, 9.0F);
+        g.FillEllipse(innerRingBrush, 5.3F, 5.3F, 7.4F, 7.4F);
+        g.FillEllipse(centerBrush, 6.6F, 6.6F, 4.8F, 4.8F);
+    }
+
+    private static void FillGearShape(Graphics g, Brush brush, float centerX, float centerY)
+    {
+        for (var i = 0; i < 8; i++)
+        {
+            var state = g.Save();
+            g.TranslateTransform(centerX, centerY);
+            g.RotateTransform(i * 45F);
+            g.FillRectangle(brush, -1.6F, -8.0F, 3.2F, 4.6F);
+            g.Restore(state);
+        }
+
+        g.FillEllipse(brush, centerX - 6.3F, centerY - 6.3F, 12.6F, 12.6F);
     }
 
     private static void DrawDotIcon(Graphics g)

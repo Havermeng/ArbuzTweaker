@@ -24,58 +24,88 @@ public partial class DotaVideoConfigTab : UserControl
     };
 
     private readonly Dota2Service _dota2Service;
+    private readonly AppSettingsService _appSettingsService;
     private readonly Dictionary<string, CheckBox> _settingCheckBoxes = new(StringComparer.OrdinalIgnoreCase);
+    private ComboBox _steamAccountComboBox = null!;
     private TextBox _videoTextBox = null!;
+    private TextBox _settingsSearchTextBox = null!;
     private Panel _settingsPanel = null!;
     private Label _pathLabel = null!;
     private Label _statusLabel = null!;
+    private Button _unlockReadOnlyButton = null!;
     private bool _isUpdatingVideoUi;
+    private bool _isLoadingSteamAccounts;
 
-    public DotaVideoConfigTab(Dota2Service dota2Service)
+    public DotaVideoConfigTab(Dota2Service dota2Service, AppSettingsService appSettingsService)
     {
         _dota2Service = dota2Service;
+        _appSettingsService = appSettingsService;
         InitializeComponent();
         LoadVideoConfigStateAsync();
     }
 
     private async void LoadVideoConfigStateAsync()
     {
-        var videoPath = await _dota2Service.GetPrimaryVideoConfigPathAsync();
-        if (!string.IsNullOrWhiteSpace(videoPath))
-        {
-            _pathLabel.Text = $"video.txt: {videoPath}";
-            _pathLabel.ForeColor = Color.Green;
-        }
-        else
-        {
-            _pathLabel.Text = "Не удалось определить путь к video.txt.";
-            _pathLabel.ForeColor = Color.Orange;
-        }
+        await LoadSteamAccountsAsync();
+        await RefreshVideoPathStateAsync();
 
         var content = await _dota2Service.LoadVideoConfigAsync();
         if (content != null)
             SetVideoText(content);
     }
 
+    private async Task LoadSteamAccountsAsync()
+    {
+        _isLoadingSteamAccounts = true;
+        _steamAccountComboBox.Items.Clear();
+
+        var settings = _appSettingsService.Load();
+        _dota2Service.PreferredSteamAccountId32 = settings.PreferredSteamAccountId32;
+        var users = await _dota2Service.GetSteamUsersAsync();
+
+        foreach (var user in users)
+            _steamAccountComboBox.Items.Add(user);
+
+        if (users.Count == 0)
+        {
+            _steamAccountComboBox.Enabled = false;
+            _isLoadingSteamAccounts = false;
+            return;
+        }
+
+        _steamAccountComboBox.Enabled = true;
+        var selectedUser = users.FirstOrDefault(user => string.Equals(user.AccountId32, settings.PreferredSteamAccountId32, StringComparison.OrdinalIgnoreCase))
+            ?? users.First();
+        _steamAccountComboBox.SelectedItem = selectedUser;
+        _dota2Service.PreferredSteamAccountId32 = selectedUser.AccountId32;
+        _isLoadingSteamAccounts = false;
+    }
+
     private void InitializeComponent()
     {
-        AutoScroll = false;
+        AutoScroll = true;
 
         var rootLayout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(20),
+            Dock = DockStyle.Top,
+            AutoScroll = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(20, 10, 20, 20),
             ColumnCount = 1,
-            RowCount = 10
+            RowCount = 12
         };
         rootLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 40F));
         rootLayout.RowStyles.Add(new RowStyle());
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 60F));
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140F));
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle());
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 210F));
         rootLayout.RowStyles.Add(new RowStyle());
         rootLayout.RowStyles.Add(new RowStyle());
 
@@ -104,6 +134,23 @@ public partial class DotaVideoConfigTab : UserControl
             Margin = new Padding(0, 0, 0, 12)
         };
 
+        var steamAccountLabel = new Label
+        {
+            Text = "Steam-аккаунт для video.txt:",
+            AutoSize = true,
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Margin = new Padding(0, 0, 0, 4)
+        };
+
+        _steamAccountComboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 520,
+            Enabled = false,
+            Margin = new Padding(0, 0, 0, 12)
+        };
+        _steamAccountComboBox.SelectedIndexChanged += async (s, e) => await SteamAccountComboBox_SelectedIndexChangedAsync();
+
         var videoLabel = new Label
         {
             Text = "Содержимое video.txt:",
@@ -117,10 +164,10 @@ public partial class DotaVideoConfigTab : UserControl
             Dock = DockStyle.Fill,
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Consolas", 10),
-            MinimumSize = new Size(0, 210),
+            MinimumSize = new Size(0, 0),
             Margin = new Padding(0, 0, 0, 12)
         };
+        UiTheme.StyleEditorTextBox(_videoTextBox);
         _videoTextBox.TextChanged += VideoTextBox_TextChanged;
 
         var settingsLabel = new Label
@@ -131,20 +178,22 @@ public partial class DotaVideoConfigTab : UserControl
             Margin = new Padding(0, 0, 0, 8)
         };
 
+        var settingsSearchPanel = CreateSettingsSearchPanel();
+
         _settingsPanel = new Panel
         {
             Dock = DockStyle.Fill,
             AutoScroll = true,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.FromArgb(35, 35, 35),
+            MinimumSize = new Size(0, 0),
             Margin = new Padding(0, 0, 0, 12)
         };
+        UiTheme.StyleListPanel(_settingsPanel);
         _settingsPanel.Resize += (s, e) => PopulateSettingsPanel();
         PopulateSettingsPanel();
 
         var buttonsPanel = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
             WrapContents = true,
             FlowDirection = FlowDirection.LeftToRight,
@@ -152,20 +201,30 @@ public partial class DotaVideoConfigTab : UserControl
         };
 
         var applyButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
-        applyButton.Click += async (s, e) => await SaveAndApplyAsync();
+        applyButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveAndApplyAsync);
 
         var helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
         helpButton.Click += (s, e) => ShowHelpDialog();
 
         var openFolderButton = new Button { Text = "Показать video.txt", Size = new Size(210, 35), Margin = new Padding(0, 0, 10, 0) };
-        openFolderButton.Click += async (s, e) => await OpenVideoConfigFolderAsync();
+        openFolderButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, OpenVideoConfigFolderAsync);
+
+        _unlockReadOnlyButton = new Button { Text = "Разблокировать video.txt", Size = new Size(210, 35), Margin = new Padding(0, 0, 10, 0) };
+        _unlockReadOnlyButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, UnlockVideoConfigAsync);
 
         var resetButton = new Button { Text = "Сбросить", Size = new Size(120, 35), Margin = new Padding(0) };
-        resetButton.Click += async (s, e) => await ResetAsync();
+        resetButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ResetAsync);
+
+        UiTheme.StyleActionButton(applyButton, true);
+        UiTheme.StyleActionButton(helpButton);
+        UiTheme.StyleActionButton(openFolderButton);
+        UiTheme.StyleActionButton(_unlockReadOnlyButton);
+        UiTheme.StyleActionButton(resetButton);
 
         buttonsPanel.Controls.Add(applyButton);
         buttonsPanel.Controls.Add(helpButton);
         buttonsPanel.Controls.Add(openFolderButton);
+        buttonsPanel.Controls.Add(_unlockReadOnlyButton);
         buttonsPanel.Controls.Add(resetButton);
 
         _statusLabel = new Label
@@ -179,14 +238,108 @@ public partial class DotaVideoConfigTab : UserControl
         rootLayout.Controls.Add(titleLabel, 0, 0);
         rootLayout.Controls.Add(_pathLabel, 0, 1);
         rootLayout.Controls.Add(infoLabel, 0, 2);
-        rootLayout.Controls.Add(videoLabel, 0, 3);
-        rootLayout.Controls.Add(_videoTextBox, 0, 4);
-        rootLayout.Controls.Add(settingsLabel, 0, 5);
-        rootLayout.Controls.Add(_settingsPanel, 0, 6);
-        rootLayout.Controls.Add(buttonsPanel, 0, 7);
-        rootLayout.Controls.Add(_statusLabel, 0, 8);
+        rootLayout.Controls.Add(steamAccountLabel, 0, 3);
+        rootLayout.Controls.Add(_steamAccountComboBox, 0, 4);
+        rootLayout.Controls.Add(videoLabel, 0, 5);
+        rootLayout.Controls.Add(_videoTextBox, 0, 6);
+        rootLayout.Controls.Add(settingsLabel, 0, 7);
+        rootLayout.Controls.Add(settingsSearchPanel, 0, 8);
+        rootLayout.Controls.Add(_settingsPanel, 0, 9);
+        rootLayout.Controls.Add(buttonsPanel, 0, 10);
+        rootLayout.Controls.Add(_statusLabel, 0, 11);
 
         Controls.Add(rootLayout);
+    }
+
+    private FlowLayoutPanel CreateSettingsSearchPanel()
+    {
+        var panel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+
+        _settingsSearchTextBox = new TextBox
+        {
+            Width = 360,
+            Margin = new Padding(0, 0, 8, 0)
+        };
+        UiTheme.StyleSearchTextBox(_settingsSearchTextBox);
+        _settingsSearchTextBox.KeyDown += (s, e) =>
+        {
+            if (e.KeyCode != Keys.Enter)
+                return;
+
+            e.SuppressKeyPress = true;
+            PopulateSettingsPanel();
+        };
+
+        var searchButton = new Button { Text = "Найти", Size = new Size(100, 31), Margin = new Padding(0, 0, 8, 0) };
+        searchButton.Click += (s, e) => PopulateSettingsPanel();
+        UiTheme.StyleActionButton(searchButton, true);
+
+        var clearButton = new Button { Text = "Сбросить поиск", Size = new Size(145, 31), Margin = new Padding(0) };
+        clearButton.Click += (s, e) =>
+        {
+            _settingsSearchTextBox.Clear();
+            PopulateSettingsPanel();
+        };
+        UiTheme.StyleActionButton(clearButton);
+
+        panel.Controls.Add(_settingsSearchTextBox);
+        panel.Controls.Add(searchButton);
+        panel.Controls.Add(clearButton);
+        return panel;
+    }
+
+    private async Task SteamAccountComboBox_SelectedIndexChangedAsync()
+    {
+        if (_isLoadingSteamAccounts || _steamAccountComboBox.SelectedItem is not SteamUserInfo user)
+            return;
+
+        var settings = _appSettingsService.Load();
+        settings.PreferredSteamAccountId32 = user.AccountId32;
+        _appSettingsService.Save(settings);
+        _dota2Service.PreferredSteamAccountId32 = user.AccountId32;
+
+        await RefreshVideoPathStateAsync();
+
+        var content = await _dota2Service.LoadVideoConfigAsync();
+        SetVideoText(content ?? string.Empty);
+        ShowStatus($"Выбран Steam-аккаунт: {user.DisplayName}", Color.Green);
+    }
+
+    private async Task RefreshVideoPathStateAsync()
+    {
+        var videoPath = await _dota2Service.GetPrimaryVideoConfigPathAsync();
+        if (string.IsNullOrWhiteSpace(videoPath))
+        {
+            _pathLabel.Text = "Не удалось определить путь к video.txt.";
+            _pathLabel.ForeColor = Color.Orange;
+
+            if (_unlockReadOnlyButton != null)
+                _unlockReadOnlyButton.Enabled = false;
+
+            return;
+        }
+
+        var isReadOnly = await _dota2Service.IsVideoConfigReadOnlyAsync();
+        if (isReadOnly == true)
+        {
+            _pathLabel.Text = $"video.txt: {videoPath} (только чтение: настройки из меню Dota не сохранятся)";
+            _pathLabel.ForeColor = Color.Orange;
+        }
+        else
+        {
+            _pathLabel.Text = $"video.txt: {videoPath}";
+            _pathLabel.ForeColor = Color.Green;
+        }
+
+        if (_unlockReadOnlyButton != null)
+            _unlockReadOnlyButton.Enabled = isReadOnly == true;
     }
 
     private async Task SaveAndApplyAsync()
@@ -202,15 +355,18 @@ public partial class DotaVideoConfigTab : UserControl
         }
 
         var readOnlyResult = MessageBox.Show(
-            "Dota может сбрасывать видео параметры. Сделать video.txt только для чтения после сохранения?",
-            "Предупреждение",
+            "Если включить 'только чтение', Dota не сможет менять video.txt: настройки из твикера не будут сбрасываться, но изменения графики из меню игры тоже не сохранятся.\n\nВключить только чтение?",
+            "Зафиксировать video.txt?",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
 
         if (readOnlyResult == DialogResult.Yes)
         {
             if (await _dota2Service.SetVideoConfigReadOnlyAsync(true))
+            {
+                await RefreshVideoPathStateAsync();
                 ShowStatus("Сохранено. video.txt переведен в режим только чтения", Color.Green);
+            }
             else
                 ShowStatus("Сохранено, но не удалось включить только чтение", Color.Orange);
 
@@ -218,7 +374,20 @@ public partial class DotaVideoConfigTab : UserControl
         }
 
         await _dota2Service.SetVideoConfigReadOnlyAsync(false);
+        await RefreshVideoPathStateAsync();
         ShowStatus("Сохранено", Color.Green);
+    }
+
+    private async Task UnlockVideoConfigAsync()
+    {
+        if (await _dota2Service.SetVideoConfigReadOnlyAsync(false))
+        {
+            await RefreshVideoPathStateAsync();
+            ShowStatus("video.txt разблокирован. Dota сможет сохранять настройки графики.", Color.Green);
+            return;
+        }
+
+        ShowStatus("Не удалось снять режим только чтения с video.txt", Color.Orange);
     }
 
     private async Task OpenVideoConfigFolderAsync()
@@ -259,55 +428,47 @@ public partial class DotaVideoConfigTab : UserControl
         _settingsPanel.Controls.Clear();
         _settingCheckBoxes.Clear();
 
-        var y = 12;
-        var availableWidth = Math.Max(620, _settingsPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 28);
-        var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.38), 240, 360);
-        var descriptionX = 18 + checkBoxWidth + 18;
-        var descriptionWidth = Math.Max(220, availableWidth - checkBoxWidth - 26);
+        var y = 8;
+        var rowIndex = 0;
+        var searchQuery = GetSettingsSearchQuery();
+        var availableWidth = Math.Max(620, _settingsPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 24);
+
+        y = UiTheme.AddListSectionHeader(_settingsPanel, y, availableWidth, "Параметры video.txt");
 
         foreach (var definition in SettingDefinitions)
         {
-            var checkBox = new CheckBox
-            {
-                Text = definition.Key,
-                Location = new Point(18, y),
-                Size = new Size(checkBoxWidth, 24),
-                AutoSize = false,
-                ForeColor = Color.White,
-                Tag = definition.Key,
-                BackColor = Color.Transparent,
-                Checked = definition.IsEnabled(GetSettingValue(definition.Key))
-            };
-            checkBox.CheckedChanged += SettingCheckBox_CheckedChanged;
-
-            var descriptionFont = new Font("Segoe UI", 10);
-            var descriptionSize = TextRenderer.MeasureText(
+            y = UiTheme.AddCheckListRow(
+                _settingsPanel,
+                y,
+                availableWidth,
+                rowIndex,
+                definition.Key,
                 definition.Description,
-                descriptionFont,
-                new Size(descriptionWidth, int.MaxValue),
-                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
-
-            var descriptionLabel = new Label
-            {
-                Text = definition.Description,
-                Location = new Point(descriptionX, y + 2),
-                Size = new Size(descriptionWidth, Math.Max(28, descriptionSize.Height + 8)),
-                AutoSize = false,
-                UseMnemonic = false,
-                TextAlign = ContentAlignment.TopLeft,
-                Font = descriptionFont,
-                ForeColor = Color.Gainsboro,
-                BackColor = Color.Transparent
-            };
+                definition.IsEnabled(GetSettingValue(definition.Key)),
+                SettingCheckBox_CheckedChanged,
+                out var checkBox,
+                definition.Key,
+                MatchesSearch(definition.Key, definition.Description, searchQuery));
 
             _settingCheckBoxes[definition.Key] = checkBox;
-            _settingsPanel.Controls.Add(checkBox);
-            _settingsPanel.Controls.Add(descriptionLabel);
-            y += Math.Max(checkBox.Height, descriptionLabel.Height) + 12;
+            rowIndex++;
         }
 
+        _settingsPanel.AutoScrollMinSize = new Size(0, y + 12);
         _settingsPanel.ResumeLayout();
         _isUpdatingVideoUi = preserveState;
+    }
+
+    private string GetSettingsSearchQuery()
+    {
+        return _settingsSearchTextBox?.Text.Trim() ?? string.Empty;
+    }
+
+    private static bool MatchesSearch(string command, string description, string query)
+    {
+        return !string.IsNullOrWhiteSpace(query)
+            && (command.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || description.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task ResetAsync()

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Win32;
@@ -10,14 +11,29 @@ namespace ArbuzTweaker;
 
 public class Dota2Service
 {
-    public const string AutoexecFileName = "autoexec.cfg.txt";
-    public const string AutoexecLaunchCommand = "+exec autoexec.cfg.txt";
+    public const string AutoexecFileName = "autoexec.cfg";
+    public const string AutoexecLaunchCommand = "+exec autoexec.cfg";
+    public const string LegacyAutoexecFileName = "autoexec.cfg.txt";
+    public const string LegacyAutoexecLaunchCommand = "+exec autoexec.cfg.txt";
 
     private string? _dotaPath;
     private string? _steamPath;
+    private readonly FileBackupService? _fileBackupService;
+    private readonly AppLogService? _logService;
+
+    public Dota2Service()
+    {
+    }
+
+    public Dota2Service(FileBackupService fileBackupService, AppLogService logService)
+    {
+        _fileBackupService = fileBackupService;
+        _logService = logService;
+    }
 
     public string? DotaPath => _dotaPath;
     public string? SteamPath => _steamPath;
+    public string? PreferredSteamAccountId32 { get; set; }
 
     public async Task<(string? dotaPath, string? steamPath)> FindDota2Async()
     {
@@ -362,12 +378,38 @@ public class Dota2Service
                         fileInfo.IsReadOnly = false;
                 }
 
+                _fileBackupService?.BackupFile(filePath, "Dota 2 video.txt");
                 File.WriteAllText(filePath, content);
+                _logService?.Info($"Dota video config saved: {filePath}");
                 return true;
+            }
+            catch (Exception ex)
+            {
+                _logService?.Error("Failed to save Dota video config.", ex);
+                return false;
+            }
+        });
+    }
+
+    public async Task<bool?> IsVideoConfigReadOnlyAsync()
+    {
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var userPath = GetPrimarySteamUserPath();
+                if (string.IsNullOrWhiteSpace(userPath))
+                    return (bool?)null;
+
+                var filePath = Path.Combine(userPath, "570", "local", "cfg", "video.txt");
+                if (!File.Exists(filePath))
+                    return false;
+
+                return new FileInfo(filePath).IsReadOnly;
             }
             catch
             {
-                return false;
+                return (bool?)null;
             }
         });
     }
@@ -642,7 +684,7 @@ public class Dota2Service
 
     private List<string> GetLocalConfigPaths(string steamPath)
     {
-        return SteamUserResolver.GetTargetLocalConfigPaths(steamPath);
+        return SteamUserResolver.GetTargetLocalConfigPaths(steamPath, PreferredSteamAccountId32);
     }
 
     private string? GetPrimarySteamUserPath()
@@ -651,7 +693,18 @@ public class Dota2Service
         if (string.IsNullOrWhiteSpace(steamPath))
             return null;
 
-        return SteamUserResolver.GetPrimarySteamUserPath(steamPath);
+        return SteamUserResolver.GetPrimarySteamUserPath(steamPath, PreferredSteamAccountId32);
+    }
+
+    public async Task<IReadOnlyList<SteamUserInfo>> GetSteamUsersAsync()
+    {
+        return await Task.Run(() =>
+        {
+            var steamPath = GetSteamPathFromRegistry();
+            return string.IsNullOrWhiteSpace(steamPath)
+                ? Array.Empty<SteamUserInfo>()
+                : SteamUserResolver.GetSteamUsers(steamPath).ToArray();
+        });
     }
 
     private static List<string> NormalizeOptionList(IEnumerable<string> options)
@@ -779,6 +832,12 @@ public class Dota2Service
                         updated = true;
                     }
 
+                    if (inDotaSection && !updated && braceCount == 1 && line.Trim() == "}")
+                    {
+                        result.Add(CreateQuotedValueLine(line, "LaunchOptions", options));
+                        updated = true;
+                    }
+
                     if (inDotaSection && braceCount == 1 && line.Trim() == "}")
                         inDotaSection = false;
 
@@ -792,11 +851,14 @@ public class Dota2Service
             if (!updated)
                 return false;
 
+            _fileBackupService?.BackupFile(configPath, "Dota 2 localconfig.vdf");
             File.WriteAllText(configPath, string.Join("\n", result));
+            _logService?.Info($"Dota launch options updated: {configPath}");
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _logService?.Error($"Failed to update Dota localconfig: {configPath}", ex);
             return false;
         }
     }
@@ -804,15 +866,54 @@ public class Dota2Service
     private static string? ExtractQuotedValue(string line, string key)
     {
         var match = Regex.Match(line, $"\\\"{Regex.Escape(key)}\\\"\\s*\\\"(?<value>.*)\\\"");
-        return match.Success ? match.Groups["value"].Value.Trim() : null;
+        return match.Success ? UnescapeVdfValue(match.Groups["value"].Value).Trim() : null;
     }
 
     private static string ReplaceQuotedValue(string line, string key, string value)
     {
         return Regex.Replace(
             line,
-            $"(\\\"{Regex.Escape(key)}\\\"\\s*\\\").*(\\\")",
-            $"$1{value}$2");
+            $"(?<prefix>\\\"{Regex.Escape(key)}\\\"\\s*\\\").*(?<suffix>\\\")",
+            match => match.Groups["prefix"].Value + EscapeVdfValue(value) + match.Groups["suffix"].Value);
+    }
+
+    private static string CreateQuotedValueLine(string closingBraceLine, string key, string value)
+    {
+        var indentation = GetIndentation(closingBraceLine);
+        var childIndentation = indentation.Contains('\t') ? indentation + "\t" : indentation + "    ";
+        return $"{childIndentation}\"{key}\"\t\t\"{EscapeVdfValue(value)}\"";
+    }
+
+    private static string GetIndentation(string line)
+    {
+        var count = 0;
+        while (count < line.Length && char.IsWhiteSpace(line[count]))
+            count++;
+
+        return line[..count];
+    }
+
+    private static string EscapeVdfValue(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
+    private static string UnescapeVdfValue(string value)
+    {
+        var result = new StringBuilder(value.Length);
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] == '\\' && i + 1 < value.Length)
+            {
+                result.Append(value[i + 1]);
+                i++;
+                continue;
+            }
+
+            result.Append(value[i]);
+        }
+
+        return result.ToString();
     }
 
     public sealed class LaunchOptionsApplyResult
@@ -856,13 +957,18 @@ public class Dota2Service
         {
             try
             {
-                var cfgPath = Path.Combine(_dotaPath, "game", "dota", "cfg", AutoexecFileName);
+                var cfgPath = GetAutoexecPath(AutoexecFileName);
                 var dir = Path.GetDirectoryName(cfgPath);
                 if (dir != null)
                     Directory.CreateDirectory(dir);
+                _fileBackupService?.BackupFile(cfgPath, "Dota 2 autoexec.cfg");
                 File.WriteAllText(cfgPath, content);
+                _logService?.Info($"Dota autoexec saved: {cfgPath}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logService?.Error("Failed to save Dota autoexec.", ex);
+            }
         });
     }
 
@@ -875,10 +981,18 @@ public class Dota2Service
         {
             try
             {
-                var cfgPath = Path.Combine(_dotaPath, "game", "dota", "cfg", AutoexecFileName);
+                var cfgPath = GetAutoexecPath(AutoexecFileName);
                 var dir = Path.GetDirectoryName(cfgPath);
                 if (dir != null)
                     Directory.CreateDirectory(dir);
+
+                var legacyCfgPath = GetAutoexecPath(LegacyAutoexecFileName);
+                if (!File.Exists(cfgPath) && File.Exists(legacyCfgPath))
+                {
+                    var legacyContent = File.ReadAllText(legacyCfgPath);
+                    File.WriteAllText(cfgPath, legacyContent);
+                    return legacyContent;
+                }
 
                 if (!File.Exists(cfgPath))
                 {
@@ -892,5 +1006,10 @@ public class Dota2Service
 
             return null;
         });
+    }
+
+    private string GetAutoexecPath(string fileName)
+    {
+        return Path.Combine(_dotaPath!, "game", "dota", "cfg", fileName);
     }
 }
