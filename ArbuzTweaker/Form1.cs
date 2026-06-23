@@ -367,6 +367,7 @@ public partial class Form1 : Form
                     if (!string.IsNullOrWhiteSpace(downloadedPath))
                     {
                         var isInstaller = string.Equals(assetName, UpdateService.InstallerAssetName, StringComparison.OrdinalIgnoreCase)
+                            || downloadedPath.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
                             || downloadedPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
                         if (isInstaller)
