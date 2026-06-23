@@ -12,7 +12,7 @@ public class UpdateService
 {
     public const string Owner = "Havermeng";
     public const string Repo = "ArbuzTweaker";
-    public const string InstallerAssetName = "ArbuzTweaker-Setup.exe";
+    public const string InstallerAssetName = "ArbuzTweaker-Setup.msi";
     public const string PortableAssetName = "ArbuzTweaker-Portable.zip";
     private static readonly TimeSpan UpdateCheckTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan DownloadTimeout = TimeSpan.FromSeconds(90);
@@ -45,7 +45,7 @@ public class UpdateService
             {
                 var asset = latest.Assets.FirstOrDefault(a => string.Equals(a.Name, InstallerAssetName, StringComparison.OrdinalIgnoreCase))
                     ?? latest.Assets.FirstOrDefault(a => string.Equals(a.Name, PortableAssetName, StringComparison.OrdinalIgnoreCase))
-                    ?? latest.Assets.FirstOrDefault(a => a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+                    ?? latest.Assets.FirstOrDefault(a => a.Name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
 
                 return (true, latestVersion, asset?.BrowserDownloadUrl, asset?.Name);
             }

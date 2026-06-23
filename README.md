@@ -4,7 +4,7 @@ ArbuzTweaker - Windows и Dota 2 твикер с упором на понятн�
 
 ## Установка
 
-- Установщик: `ArbuzTweaker-Setup.exe`
+- Установщик: `ArbuzTweaker-Setup.msi`
 - Портативная версия: `ArbuzTweaker-Portable.zip`
 
 ## Что умеет

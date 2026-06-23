@@ -7,12 +7,12 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repoRoot "ArbuzTweaker\ArbuzTweaker.csproj"
+$installerProjectPath = Join-Path $repoRoot "Installer\ArbuzTweaker.Installer.wixproj"
 $artifactsRoot = Join-Path $repoRoot "artifacts"
 $publishDir = Join-Path $artifactsRoot "publish"
+$installerBuildDir = Join-Path $artifactsRoot "installer-build"
 $portableZipPath = Join-Path $artifactsRoot "ArbuzTweaker-Portable.zip"
-$installerPath = Join-Path $artifactsRoot "ArbuzTweaker-Setup.exe"
-$installerInputDir = Join-Path $artifactsRoot "installer-input"
-$sedPath = Join-Path $artifactsRoot "arbuztweaker-installer.sed"
+$installerPath = Join-Path $artifactsRoot "ArbuzTweaker-Setup.msi"
 
 if (Test-Path $artifactsRoot) {
     Remove-Item $artifactsRoot -Recurse -Force
@@ -20,88 +20,34 @@ if (Test-Path $artifactsRoot) {
 
 New-Item -ItemType Directory -Path $artifactsRoot | Out-Null
 
-dotnet publish $projectPath -c $Configuration -r $Runtime --self-contained true -p:PublishSingleFile=false -o $publishDir
+$projectXml = [xml](Get-Content -LiteralPath $projectPath -Raw)
+$version = $projectXml.Project.PropertyGroup.Version | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($version)) {
+    throw "Project version is missing in $projectPath"
+}
+
+dotnet publish $projectPath `
+    -c $Configuration `
+    -r $Runtime `
+    --self-contained true `
+    -p:PublishSingleFile=false `
+    -o $publishDir
 
 Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $portableZipPath -Force
 
-New-Item -ItemType Directory -Path $installerInputDir | Out-Null
-Copy-Item $portableZipPath (Join-Path $installerInputDir "payload.zip")
+dotnet build $installerProjectPath `
+    -c $Configuration `
+    -p:ProductVersion=$version `
+    -p:PublishDir=$publishDir `
+    -p:RepoRoot=$repoRoot `
+    -o $installerBuildDir
 
-$installScript = @'
-$ErrorActionPreference = "Stop"
-
-$targetDir = Join-Path $env:LOCALAPPDATA "Programs\ArbuzTweaker"
-$payloadZip = Join-Path $PSScriptRoot "payload.zip"
-
-if (Test-Path $targetDir) {
-    New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-} else {
-    New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+$builtInstaller = Get-ChildItem -Path $installerBuildDir -Filter "ArbuzTweaker-Setup.msi" -Recurse | Select-Object -First 1
+if ($builtInstaller -eq $null) {
+    throw "MSI installer was not produced in $installerBuildDir"
 }
 
-Expand-Archive -Path $payloadZip -DestinationPath $targetDir -Force
-
-$exePath = Join-Path $targetDir "ArbuzTweaker.exe"
-$desktopPath = [Environment]::GetFolderPath("Desktop")
-$programsPath = [Environment]::GetFolderPath("Programs")
-
-$shortcutTargets = @(
-    (Join-Path $desktopPath "ArbuzTweaker.lnk"),
-    (Join-Path $programsPath "ArbuzTweaker.lnk")
-)
-
-$shell = New-Object -ComObject WScript.Shell
-foreach ($shortcutPath in $shortcutTargets) {
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = $exePath
-    $shortcut.WorkingDirectory = $targetDir
-    $shortcut.IconLocation = "$exePath,0"
-    $shortcut.Description = "ArbuzTweaker"
-    $shortcut.Save()
-}
-
-Start-Process -FilePath $exePath
-'@
-Set-Content -Path (Join-Path $installerInputDir "install.ps1") -Value $installScript -Encoding UTF8
-
-$sourceDir = $installerInputDir.Replace("\", "\\")
-$targetName = $installerPath.Replace("\", "\\")
-
-$sedContent = @"
-[Version]
-Class=IEXPRESS
-SEDVersion=3
-[Options]
-PackagePurpose=InstallApp
-ShowInstallProgramWindow=0
-HideExtractAnimation=1
-UseLongFileName=1
-InsideCompressed=0
-CAB_FixedSize=0
-CAB_ResvCodeSigning=0
-RebootMode=N
-InstallPrompt=
-DisplayLicense=
-FinishMessage=ArbuzTweaker installed.
-TargetName=$targetName
-FriendlyName=ArbuzTweaker Setup
-AppLaunched=powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1
-PostInstallCmd=<None>
-AdminQuietInstCmd=powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1
-UserQuietInstCmd=powershell.exe -NoProfile -ExecutionPolicy Bypass -File install.ps1
-SourceFiles=SourceFiles
-[Strings]
-FILE0=payload.zip
-FILE1=install.ps1
-[SourceFiles]
-SourceFiles0=$sourceDir\\
-[SourceFiles0]
-%FILE0%=
-%FILE1%=
-"@
-
-Set-Content -Path $sedPath -Value $sedContent -Encoding ASCII
-Start-Process -FilePath "iexpress.exe" -ArgumentList "/N", $sedPath -Wait -NoNewWindow
+Copy-Item -LiteralPath $builtInstaller.FullName -Destination $installerPath -Force
 
 Write-Host "Portable zip: $portableZipPath"
-Write-Host "Installer: $installerPath"
+Write-Host "MSI installer: $installerPath"

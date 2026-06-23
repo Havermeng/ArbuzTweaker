@@ -31,5 +31,5 @@ jobs:
         with:
           files: |
             artifacts/ArbuzTweaker-Portable.zip
-            artifacts/ArbuzTweaker-Setup.exe
+            artifacts/ArbuzTweaker-Setup.msi
           generate_release_notes: true

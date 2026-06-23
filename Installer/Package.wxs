@@ -1,0 +1,76 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="ArbuzTweaker"
+    Manufacturer="ArbuzTweaker"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="{8C9FCBA4-60EF-454B-9F03-D8F5BB1AD87E}"
+    Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ArbuzTweaker is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="ArbuzIcon" SourceFile="$(var.RepoRoot)\ArbuzTweaker\Assets\Arbuz.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ArbuzIcon" />
+
+        <Feature Id="MainFeature" Title="ArbuzTweaker" Level="1">
+          <ComponentGroupRef Id="ApplicationFiles" />
+          <ComponentRef Id="StartMenuShortcutComponent" />
+          <ComponentRef Id="DesktopShortcutComponent" />
+        </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="ArbuzTweaker" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="ArbuzTweaker" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER" Source="$(var.PublishDir)">
+      <Files Include="**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="StartMenuShortcutComponent" Directory="ApplicationProgramsFolder" Guid="{721FCF27-55AE-469E-B4C8-EA0B864C1161}">
+      <Shortcut
+        Id="StartMenuShortcut"
+        Name="ArbuzTweaker"
+        Target="[INSTALLFOLDER]ArbuzTweaker.exe"
+        WorkingDirectory="INSTALLFOLDER"
+        Icon="ArbuzIcon" />
+
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue
+        Root="HKCU"
+        Key="Software\ArbuzTweaker"
+        Name="StartMenuShortcut"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
+
+    <Component Id="DesktopShortcutComponent" Directory="DesktopFolder" Guid="{43612966-8EA3-408B-A20E-92897CB4C565}">
+      <Shortcut
+        Id="DesktopShortcut"
+        Name="ArbuzTweaker"
+        Target="[INSTALLFOLDER]ArbuzTweaker.exe"
+        WorkingDirectory="INSTALLFOLDER"
+        Icon="ArbuzIcon" />
+
+      <RegistryValue
+        Root="HKCU"
+        Key="Software\ArbuzTweaker"
+        Name="DesktopShortcut"
+        Type="integer"
+        Value="1"
+        KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

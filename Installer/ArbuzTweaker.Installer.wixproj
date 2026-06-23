@@ -1,0 +1,10 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <OutputName>ArbuzTweaker-Setup</OutputName>
+    <OutputType>Package</OutputType>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">1.0.1</ProductVersion>
+    <PublishDir Condition="'$(PublishDir)' == ''">..\artifacts\publish</PublishDir>
+    <RepoRoot Condition="'$(RepoRoot)' == ''">..</RepoRoot>
+    <DefineConstants>ProductVersion=$(ProductVersion);PublishDir=$(PublishDir);RepoRoot=$(RepoRoot)</DefineConstants>
+  </PropertyGroup>
+</Project>
