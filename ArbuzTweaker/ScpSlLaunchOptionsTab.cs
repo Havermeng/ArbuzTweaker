@@ -5,9 +5,6 @@ namespace ArbuzTweaker;
 public partial class ScpSlLaunchOptionsTab : UserControl
 {
     private const string NoLogOption = "-nolog";
-    private const string WindowModeExclusiveOption = "-window-mode exclusive";
-    private const string ScreenFullscreenOption = "-screen-fullscreen";
-    private const string ScreenQualityLowOption = "-screen-quality Low";
     private const string FDiscordOption = "-fdiscord";
     private const string RuWeakHttpSecurityOption = "-ru --weak-http-security";
 
@@ -18,9 +15,6 @@ public partial class ScpSlLaunchOptionsTab : UserControl
     private TextBox _optionsSearchTextBox = null!;
     private Panel _optionsPanel = null!;
     private CheckBox _noLogCheckBox = null!;
-    private CheckBox _windowModeCheckBox = null!;
-    private CheckBox _fullscreenCheckBox = null!;
-    private CheckBox _screenQualityCheckBox = null!;
     private CheckBox _discordCheckBox = null!;
     private CheckBox _ruWeakHttpSecurityCheckBox = null!;
     private Label _pathLabel = null!;
@@ -458,9 +452,6 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         AddOptionRow(ref y, ref rowIndex, ref _ruWeakHttpSecurityCheckBox, RuWeakHttpSecurityOption, "Для RU-региона. Иногда помогает с проблемами подключения к серверам игры.", selectedOptions.Contains(RuWeakHttpSecurityOption), searchQuery, RuWeakHttpSecurityCheckBox_CheckedChanged);
         AddOptionRow(ref y, ref rowIndex, ref _noLogCheckBox, NoLogOption, "Отключает часть логирования Unity/игры.", selectedOptions.Contains(NoLogOption), searchQuery, NoLogCheckBox_CheckedChanged);
         AddOptionRow(ref y, ref rowIndex, ref _discordCheckBox, FDiscordOption, "Запускает игру с Discord-авторизацией, если она нужна текущей сборке.", selectedOptions.Contains(FDiscordOption), searchQuery, DiscordCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref rowIndex, ref _fullscreenCheckBox, ScreenFullscreenOption, "Запускает игру в полноэкранном режиме.", selectedOptions.Contains(ScreenFullscreenOption), searchQuery, FullscreenCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref rowIndex, ref _windowModeCheckBox, WindowModeExclusiveOption, "Просит Unity использовать эксклюзивный полноэкранный режим.", selectedOptions.Contains(WindowModeExclusiveOption), searchQuery, WindowModeCheckBox_CheckedChanged);
-        AddOptionRow(ref y, ref rowIndex, ref _screenQualityCheckBox, ScreenQualityLowOption, "Передаёт Unity низкий пресет качества через параметры запуска.", selectedOptions.Contains(ScreenQualityLowOption), searchQuery, ScreenQualityCheckBox_CheckedChanged);
 
         _optionsPanel.AutoScrollMinSize = new Size(0, y + 12);
         _optionsPanel.ResumeLayout();
@@ -510,24 +501,6 @@ public partial class ScpSlLaunchOptionsTab : UserControl
             SetOptionLine(NoLogOption, _noLogCheckBox.Checked);
     }
 
-    private void WindowModeCheckBox_CheckedChanged(object? sender, EventArgs e)
-    {
-        if (!_isUpdatingUi)
-            SetOptionLine(WindowModeExclusiveOption, _windowModeCheckBox.Checked);
-    }
-
-    private void FullscreenCheckBox_CheckedChanged(object? sender, EventArgs e)
-    {
-        if (!_isUpdatingUi)
-            SetOptionLine(ScreenFullscreenOption, _fullscreenCheckBox.Checked);
-    }
-
-    private void ScreenQualityCheckBox_CheckedChanged(object? sender, EventArgs e)
-    {
-        if (!_isUpdatingUi)
-            SetOptionLine(ScreenQualityLowOption, _screenQualityCheckBox.Checked);
-    }
-
     private void DiscordCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
         if (!_isUpdatingUi)
@@ -573,9 +546,6 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         _isUpdatingUi = true;
         _noLogCheckBox.Checked = lines.Contains(NoLogOption);
         _discordCheckBox.Checked = lines.Contains(FDiscordOption);
-        _fullscreenCheckBox.Checked = lines.Contains(ScreenFullscreenOption);
-        _windowModeCheckBox.Checked = lines.Contains(WindowModeExclusiveOption);
-        _screenQualityCheckBox.Checked = lines.Contains(ScreenQualityLowOption);
         _ruWeakHttpSecurityCheckBox.Checked = lines.Contains(RuWeakHttpSecurityOption);
         _isUpdatingUi = false;
     }
@@ -618,11 +588,8 @@ public partial class ScpSlLaunchOptionsTab : UserControl
             if (string.IsNullOrWhiteSpace(line))
                 continue;
 
-            line = ExtractKnownOption(line, WindowModeExclusiveOption, result, seen);
-            line = ExtractKnownOption(line, ScreenQualityLowOption, result, seen);
             line = ExtractKnownOption(line, RuWeakHttpSecurityOption, result, seen);
             line = ExtractKnownOption(line, NoLogOption, result, seen);
-            line = ExtractKnownOption(line, ScreenFullscreenOption, result, seen);
             line = ExtractKnownOption(line, FDiscordOption, result, seen);
 
             line = NormalizeWhitespace(line);
