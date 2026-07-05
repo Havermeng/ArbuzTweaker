@@ -270,6 +270,9 @@ internal static class UiTheme
             case "Прицел":
                 DrawCrosshairIcon(graphics);
                 break;
+            case "Функции":
+                DrawFunctionsIcon(graphics);
+                break;
             case "Стороннее ПО":
                 DrawSettingsIcon(graphics);
                 break;
@@ -425,6 +428,20 @@ internal static class UiTheme
         g.DrawLine(accentPen, 9.0F, 1.5F, 9.0F, 6.2F);
         g.DrawLine(accentPen, 9.0F, 11.8F, 9.0F, 16.5F);
         g.FillEllipse(dotBrush, 7.6F, 7.6F, 2.8F, 2.8F);
+    }
+
+    private static void DrawFunctionsIcon(Graphics g)
+    {
+        using var screenBrush = new SolidBrush(Color.FromArgb(45, 50, 56));
+        using var borderPen = new Pen(Color.FromArgb(210, 216, 222), 1.2F);
+        using var accentPen = new Pen(Color.FromArgb(76, 176, 255), 1.5F);
+
+        g.FillRectangle(screenBrush, 2.5F, 3.5F, 13.0F, 9.0F);
+        g.DrawRectangle(borderPen, 2.5F, 3.5F, 13.0F, 9.0F);
+        g.DrawLine(borderPen, 7.0F, 13.5F, 11.0F, 13.5F);
+        g.DrawLine(borderPen, 9.0F, 12.5F, 9.0F, 15.0F);
+        g.DrawArc(accentPen, 6.0F, 5.6F, 6.0F, 5.6F, 35, 290);
+        g.DrawLine(accentPen, 9.0F, 5.2F, 9.0F, 8.2F);
     }
 
     private static void DrawSettingsIcon(Graphics g)

@@ -223,6 +223,7 @@ public partial class Form1 : Form
         AddTab("Dota 2", new DotaTab(_configService, _dota2Service, _appSettingsService, _fileBackupService));
         AddTab("SCP:SL", new ScpSlTab(_scpSlService, _appSettingsService));
         AddTab("Прицел", new CrosshairTab());
+        AddTab("Функции", new FunctionsTab());
         AddTab("Стороннее ПО", new ThirdPartyToolsTab(_nvidiaInspectorService, _msiAfterburnerService, _intelXtuService));
         AddTab("Настройки", new SettingsTab(_appSettingsService, _updateService, _fileBackupService, _registryBackupService, _profileService, _logService, ResetWarningChoices));
     }
