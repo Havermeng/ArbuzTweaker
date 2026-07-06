@@ -7,9 +7,11 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #111315;
+      --bg: #101214;
       --panel: #1b1f23;
+      --panel-2: #15191d;
       --accent: #1cc96b;
+      --blue: #2388e8;
       --text: #eef2f3;
       --muted: #a9b1b8;
       --border: #2d333b;
@@ -18,20 +20,17 @@
     body {
       margin: 0;
       font-family: "Segoe UI", Arial, sans-serif;
-      background: radial-gradient(circle at top, #183322, var(--bg) 45%);
+      background: #101214;
       color: var(--text);
     }
     .wrap {
-      width: min(960px, calc(100% - 32px));
+      width: min(1060px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 48px 0 64px;
+      padding: 40px 0 56px;
     }
-    .hero, .panel {
-      background: rgba(27, 31, 35, 0.94);
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 28px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    .hero {
+      padding: 28px 0 30px;
+      border-bottom: 1px solid var(--border);
     }
     .hero h1 {
       margin: 0 0 12px;
@@ -43,25 +42,25 @@
       color: var(--muted);
       font-size: 18px;
       line-height: 1.6;
-      max-width: 760px;
+      max-width: 820px;
     }
     .downloads {
       display: flex;
-      gap: 14px;
+      gap: 12px;
       flex-wrap: wrap;
-      margin-top: 24px;
+      margin-top: 22px;
     }
     .button {
       display: inline-block;
       text-decoration: none;
-      border-radius: 12px;
-      padding: 14px 18px;
+      border-radius: 8px;
+      padding: 12px 16px;
       font-weight: 700;
       border: 1px solid transparent;
     }
     .button.primary {
-      background: var(--accent);
-      color: #0a1810;
+      background: var(--blue);
+      color: white;
     }
     .button.secondary {
       background: transparent;
@@ -71,12 +70,18 @@
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 18px;
+      gap: 16px;
       margin-top: 22px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
     }
     .panel h2 {
       margin: 0 0 12px;
-      font-size: 22px;
+      font-size: 21px;
     }
     .panel ul {
       margin: 0;
@@ -91,8 +96,38 @@
     }
     .stack {
       display: grid;
-      gap: 18px;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .screenshots {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
       margin-top: 22px;
+    }
+    .shot {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    .shot p {
+      margin: 0;
+      padding: 10px 12px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+    code {
+      color: #d9edf7;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 5px;
     }
   </style>
 </head>
@@ -100,41 +135,66 @@
   <main class="wrap">
     <section class="hero">
       <h1>ArbuzTweaker</h1>
-      <p>Твикер для Windows и Dota 2, сделанный для удобной и понятной настройки производительности через конфиги, параметры запуска и видео настройки.</p>
+      <p>Open-source Windows utility для понятной настройки Windows, Dota 2, SCP: Secret Laboratory, прицела-оверлея и вспомогательных инструментов. Приложение делает бэкапы перед изменениями и распространяется через GitHub Releases.</p>
       <div class="downloads">
         <a class="button primary" href="https://github.com/Havermeng/ArbuzTweaker/releases/latest/download/ArbuzTweaker-Setup.msi">Скачать установщик</a>
-        <a class="button secondary" href="https://github.com/Havermeng/ArbuzTweaker/releases/latest/download/ArbuzTweaker-Portable.zip">Скачать zip</a>
+        <a class="button secondary" href="https://github.com/Havermeng/ArbuzTweaker/releases/latest/download/ArbuzTweaker-Portable.zip">Скачать portable zip</a>
         <a class="button secondary" href="https://github.com/Havermeng/ArbuzTweaker/releases/latest">Все релизы</a>
       </div>
+    </section>
+
+    <section class="screenshots" aria-label="Скриншоты">
+      <article class="shot">
+        <img src="screenshots/windows.png" alt="Windows tweaks tab">
+        <p>Windows-твики с безопасным режимом и статусом прав администратора.</p>
+      </article>
+      <article class="shot">
+        <img src="screenshots/functions.png" alt="Functions tab">
+        <p>Быстрые функции без изменения системных настроек.</p>
+      </article>
+      <article class="shot">
+        <img src="screenshots/settings.png" alt="Settings tab">
+        <p>Обновления, бэкапы, журнал и информация о безопасности.</p>
+      </article>
     </section>
 
     <section class="grid">
       <article class="panel">
         <h2>Что умеет</h2>
         <ul>
-          <li>редактирует `autoexec.cfg.txt`</li>
-          <li>настраивает `LaunchOptions` в `localconfig.vdf`</li>
-          <li>редактирует `video.txt`</li>
-          <li>проверяет обновления через GitHub</li>
+          <li>Windows-твики с безопасным режимом</li>
+          <li>Dota 2: <code>autoexec.cfg</code>, <code>video.txt</code>, <code>LaunchOptions</code></li>
+          <li>SCP:SL: параметры запуска и бинды</li>
+          <li>Прицел-оверлей с шаблонами</li>
+          <li>Бэкапы файлов и реестра</li>
         </ul>
       </article>
       <article class="panel">
-        <h2>Установка</h2>
+        <h2>Проверка релиза</h2>
         <ul>
-          <li>`ArbuzTweaker-Setup.msi` - установка через Windows Installer</li>
-          <li>`ArbuzTweaker-Portable.zip` - запуск без установки после распаковки</li>
+          <li>В новых релизах есть <code>SHA256SUMS.txt</code></li>
+          <li>Установщик и portable можно проверить по SHA256</li>
+          <li>Приложение показывает наличие цифровой подписи при обновлении</li>
         </ul>
+      </article>
+      <article class="panel">
+        <h2>Права администратора</h2>
+        <p>Часть Windows-твиков требует прав администратора. Вкладка Windows показывает текущий статус прав и предупреждает перед системными изменениями.</p>
       </article>
     </section>
 
     <section class="stack">
       <article class="panel">
         <h2>Безопасность</h2>
-        <p>Программа не является читом, не дает игрового преимущества и использует только разрешенные файлы и параметры запуска. Данные пользователя никуда не отправляются и остаются на компьютере.</p>
+        <p>ArbuzTweaker не является читом: он не делает DLL-инжект, не лезет в память процесса, не трогает античит, HWID, сеть игры, бан-обход и не автоматизирует игровой процесс. Игровые разделы работают через пользовательские конфиги и параметры запуска.</p>
       </article>
       <article class="panel">
-        <h2>Про проект</h2>
-        <p>ArbuzTweaker сделан при помощи вайбкодинга и создан для того, чтобы люди могли легко и понятно повышать производительность своих устройств без ручного редактирования десятков файлов.</p>
+        <h2>Откат</h2>
+        <p>Перед изменениями создаются резервные копии. В приложении есть раздел <code>Настройки -> Бэкапы и журнал</code>, где можно открыть бэкапы файлов, восстановить файл, открыть бэкапы реестра и журнал действий.</p>
+      </article>
+      <article class="panel">
+        <h2>FAQ</h2>
+        <p>Если SmartScreen или антивирус предупреждает о файле, проверьте источник скачивания, SHA256 из релиза и исходный код. Проект пока не подписан платным code-signing сертификатом, поэтому Windows может показывать предупреждение репутации.</p>
       </article>
     </section>
   </main>

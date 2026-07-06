@@ -303,6 +303,8 @@ public partial class WindowsTweaksTab : UserControl
             ForeColor = UiTheme.TextMuted
         };
 
+        var adminStatusLabel = CreateAdminStatusLabel();
+
         var memoryLabel = new Label
         {
             Text = "Память и фоновые процессы",
@@ -718,40 +720,61 @@ public partial class WindowsTweaksTab : UserControl
 
         var gameModeDescriptionLabel = new Label
         {
-            Text = "ArbuzTweaker читает состояние из реестра и применяет выбранные значения. Для HKLM-параметров нужен запуск от имени администратора.",
+            Text = "Выберите профиль или отметьте пункты вручную. Безопасный профиль выбирает только рекомендованные HKCU-твики, игровой - все рекомендованные, экспериментальный - весь список. Для HKLM-параметров нужен запуск от имени администратора.",
             Location = new Point(20, 40),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
             ForeColor = Color.Gainsboro
         };
 
-        var applyRecommendedGameTweaksButton = new Button
+        var safeProfileButton = new Button
         {
-            Text = "Отметить рекомендованные",
+            Text = "Профиль: безопасный",
             Location = new Point(20, 95),
-            Size = new Size(210, 35)
+            Size = new Size(190, 35)
         };
-        applyRecommendedGameTweaksButton.Click += (s, e) => SetRecommendedGameTweaksChecked();
+        UiTheme.StyleActionButton(safeProfileButton);
+        safeProfileButton.Click += (s, e) => SetSafeGameTweaksChecked();
+
+        var gameProfileButton = new Button
+        {
+            Text = "Профиль: игровой",
+            Location = new Point(220, 95),
+            Size = new Size(170, 35)
+        };
+        UiTheme.StyleActionButton(gameProfileButton);
+        gameProfileButton.Click += (s, e) => SetRecommendedGameTweaksChecked();
+
+        var experimentalProfileButton = new Button
+        {
+            Text = "Профиль: экспериментальный",
+            Location = new Point(400, 95),
+            Size = new Size(240, 35)
+        };
+        UiTheme.StyleActionButton(experimentalProfileButton);
+        experimentalProfileButton.Click += (s, e) => SetExperimentalGameTweaksChecked();
 
         var applyGameTweaksButton = new Button
         {
             Text = "Применить игровые твики",
-            Location = new Point(240, 95),
+            Location = new Point(20, 145),
             Size = new Size(210, 35)
         };
+        UiTheme.StyleActionButton(applyGameTweaksButton, true);
         applyGameTweaksButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ApplyGameTweaksAsync);
 
         var restoreRegistryBackupButton = new Button
         {
             Text = "Откатить бэкап реестра",
-            Location = new Point(460, 95),
+            Location = new Point(240, 145),
             Size = new Size(230, 35)
         };
+        UiTheme.StyleActionButton(restoreRegistryBackupButton);
         restoreRegistryBackupButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, RestoreRegistryBackupAsync);
 
         _gameTweaksPanel = new Panel
         {
-            Location = new Point(20, 150),
+            Location = new Point(20, 200),
             Size = new Size(WindowsPageContentWidth, 1),
             AutoScroll = false,
             BorderStyle = BorderStyle.None,
@@ -819,7 +842,8 @@ public partial class WindowsTweaksTab : UserControl
         nvidiaOverlayCustomProgramPanel.Controls.Add(browseNvidiaOverlayCustomProgramButton);
 
         AddSystemControl(titleLabel, 8);
-        AddSystemControl(infoLabel, 26);
+        AddSystemControl(infoLabel, 10);
+        AddSystemControl(adminStatusLabel, 26);
         AddSystemControl(graphicsLabel, 8);
         AddSystemControl(_mpoDisabledCheckBox, 6);
         AddSystemControl(mpoDescriptionLabel, 6);
@@ -869,7 +893,9 @@ public partial class WindowsTweaksTab : UserControl
 
         gameModePage.Controls.Add(gameModeLabel);
         gameModePage.Controls.Add(gameModeDescriptionLabel);
-        gameModePage.Controls.Add(applyRecommendedGameTweaksButton);
+        gameModePage.Controls.Add(safeProfileButton);
+        gameModePage.Controls.Add(gameProfileButton);
+        gameModePage.Controls.Add(experimentalProfileButton);
         gameModePage.Controls.Add(applyGameTweaksButton);
         gameModePage.Controls.Add(restoreRegistryBackupButton);
         gameModePage.Controls.Add(_gameTweaksPanel);
@@ -1246,8 +1272,12 @@ public partial class WindowsTweaksTab : UserControl
         var descriptionFont = new Font("Segoe UI", 9.5F);
         foreach (var tweak in GameTweaks)
         {
+            var requiresAdmin = tweak.Values.Any(value => value.Root == RegistryRoot.LocalMachine);
+            var descriptionText = requiresAdmin
+                ? tweak.Description + " Требует прав администратора."
+                : tweak.Description + " Не требует прав администратора.";
             var descriptionSize = TextRenderer.MeasureText(
-                tweak.Description,
+                descriptionText,
                 descriptionFont,
                 new Size(descriptionWidth, int.MaxValue),
                 TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
@@ -1275,7 +1305,7 @@ public partial class WindowsTweaksTab : UserControl
 
             var descriptionLabel = new Label
             {
-                Text = tweak.Description,
+                Text = descriptionText,
                 Location = new Point(26, 30),
                 Size = new Size(descriptionWidth, descriptionHeight),
                 AutoSize = false,
@@ -1318,18 +1348,75 @@ public partial class WindowsTweaksTab : UserControl
 
     private void SetRecommendedGameTweaksChecked()
     {
+        SetGameTweaksChecked(tweak => tweak.Recommended);
+
+        ShowStatus("Выбран игровой профиль", Color.Green);
+    }
+
+    private void SetSafeGameTweaksChecked()
+    {
+        SetGameTweaksChecked(tweak => tweak.Recommended && tweak.Values.All(value => value.Root == RegistryRoot.CurrentUser));
+        ShowStatus("Выбран безопасный профиль без HKLM-твиков", Color.Green);
+    }
+
+    private void SetExperimentalGameTweaksChecked()
+    {
+        SetGameTweaksChecked(_ => true);
+        ShowStatus("Выбран экспериментальный профиль", Color.Orange);
+    }
+
+    private void SetGameTweaksChecked(Func<RegistryGameTweak, bool> selector)
+    {
         foreach (var (tweak, checkBox) in _gameTweakCheckBoxes)
+            checkBox.Checked = selector(tweak);
+    }
+
+    private bool ConfirmGameTweaksPreview(IReadOnlyList<PlannedGameTweakChange> plannedChanges)
+    {
+        var preview = new StringBuilder();
+        preview.AppendLine("Будут применены следующие изменения:");
+        preview.AppendLine();
+
+        foreach (var change in plannedChanges.Take(12))
         {
-            checkBox.Checked = tweak.Recommended;
+            preview.Append(change.Enable ? "Включить: " : "Отключить: ");
+            preview.AppendLine(change.Tweak.Name);
         }
 
-        ShowStatus("Отмечены рекомендованные игровые твики", Color.Green);
+        if (plannedChanges.Count > 12)
+        {
+            preview.AppendLine();
+            preview.AppendLine("И ещё: " + (plannedChanges.Count - 12));
+        }
+
+        preview.AppendLine();
+        preview.AppendLine("Продолжить?");
+
+        return MessageBox.Show(
+            preview.ToString(),
+            "Перед применением",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information) == DialogResult.Yes;
     }
 
     private async Task ApplyGameTweaksAsync()
     {
-        var hasMachineTweaks = _gameTweakCheckBoxes.Any(pair => pair.Value.Checked != IsGameTweakEnabled(pair.Key)
-            && pair.Key.Values.Any(value => value.Root == RegistryRoot.LocalMachine));
+        var plannedChanges = _gameTweakCheckBoxes
+            .Where(pair => pair.Value.Checked != IsGameTweakEnabled(pair.Key))
+            .Select(pair => new PlannedGameTweakChange(pair.Key, pair.Value.Checked))
+            .ToList();
+
+        if (plannedChanges.Count == 0)
+        {
+            ShowStatus("Нет изменений для применения", Color.Gray);
+            return;
+        }
+
+        if (!ConfirmGameTweaksPreview(plannedChanges))
+            return;
+
+        var hasMachineTweaks = plannedChanges.Any(change =>
+            change.Tweak.Values.Any(value => value.Root == RegistryRoot.LocalMachine));
 
         if (hasMachineTweaks && !IsRunningAsAdministrator())
         {
@@ -2122,6 +2209,21 @@ public partial class WindowsTweaksTab : UserControl
         return principal.IsInRole(WindowsBuiltInRole.Administrator);
     }
 
+    private static Label CreateAdminStatusLabel()
+    {
+        var isAdmin = IsRunningAsAdministrator();
+        return new Label
+        {
+            Text = isAdmin
+                ? "Статус прав: запущено с правами администратора. Системные HKLM-твики доступны."
+                : "Статус прав: запущено без прав администратора. HKLM-твики потребуют подтверждения UAC или не применятся.",
+            MaximumSize = new Size(WindowsPageContentWidth, 0),
+            AutoSize = true,
+            ForeColor = isAdmin ? UiTheme.AccentGreen : Color.Orange,
+            BackColor = Color.Transparent
+        };
+    }
+
     private async Task<ElevatedCommandResult> RunElevatedCmdAsync(string command)
     {
         return await RunElevatedProcessAsync("cmd.exe", "/c " + command);
@@ -2241,6 +2343,8 @@ public partial class WindowsTweaksTab : UserControl
         string Description,
         bool Recommended,
         IReadOnlyList<RegistryGameValue> Values);
+
+    private sealed record PlannedGameTweakChange(RegistryGameTweak Tweak, bool Enable);
 
     private sealed record RegistryGameValue(
         RegistryRoot Root,

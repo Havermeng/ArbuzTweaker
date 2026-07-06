@@ -32,4 +32,5 @@ jobs:
           files: |
             artifacts/ArbuzTweaker-Portable.zip
             artifacts/ArbuzTweaker-Setup.msi
+            artifacts/SHA256SUMS.txt
           generate_release_notes: true

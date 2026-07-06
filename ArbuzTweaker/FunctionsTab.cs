@@ -9,11 +9,14 @@ public sealed class FunctionsTab : UserControl
     private static readonly IntPtr ScMonitorPower = new(0xf170);
     private static readonly IntPtr MonitorPowerOff = new(2);
 
+    private readonly AppLogService _logService;
     private readonly Label _statusLabel;
     private readonly Button _turnOffScreenButton;
 
-    public FunctionsTab()
+    public FunctionsTab(AppLogService logService)
     {
+        _logService = logService;
+
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -124,7 +127,8 @@ public sealed class FunctionsTab : UserControl
         }
         catch (Exception ex)
         {
-            _statusLabel.Text = "Не удалось отключить экран: " + ex.Message;
+            _logService.Error("Failed to turn off display.", ex);
+            _statusLabel.Text = "Не получилось отключить экран. Подробности сохранены в журнале.";
             _statusLabel.ForeColor = Color.OrangeRed;
         }
         finally

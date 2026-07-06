@@ -153,9 +153,9 @@ public sealed class NvidiaInspectorService
 
             return ThirdPartyToolInstallResult.Success($"NVIDIA Inspector установлен ({tagName}). SHA256 архива: {archiveSha256}");
         }
-        catch (Exception ex)
+        catch
         {
-            return ThirdPartyToolInstallResult.Failure($"Не удалось установить NVIDIA Inspector: {ex.Message}");
+            return ThirdPartyToolInstallResult.Failure("Не получилось установить NVIDIA Inspector. Попробуйте позже или скачайте архив с официального GitHub-релиза вручную.");
         }
     }
 

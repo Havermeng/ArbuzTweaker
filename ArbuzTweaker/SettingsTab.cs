@@ -10,6 +10,7 @@ public partial class SettingsTab : UserControl
 {
     private const int SettingsContentWidth = 800;
     private const string SupportUrl = "https://dalink.to/arbuznymagnat";
+    private const string LatestReleaseUrl = "https://github.com/Havermeng/ArbuzTweaker/releases/latest";
 
     private readonly AppSettingsService _appSettingsService;
     private readonly UpdateService _updateService;
@@ -99,15 +100,36 @@ public partial class SettingsTab : UserControl
         {
             Text = "Проверить",
             Size = new Size(170, 35),
-            Margin = new Padding(0, 0, 0, 0)
+            Margin = new Padding(0, 0, 10, 8)
         };
         UiTheme.StyleActionButton(checkNowButton, true);
         checkNowButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, CheckForUpdatesNowAsync);
 
+        var whatsNewButton = new Button
+        {
+            Text = "Что нового",
+            Size = new Size(150, 35),
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        UiTheme.StyleActionButton(whatsNewButton);
+        whatsNewButton.Click += (s, e) => OpenLatestReleasePage();
+
+        var updateButtonsPanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            MaximumSize = new Size(SettingsContentWidth, 0),
+            Margin = new Padding(0)
+        };
+        updateButtonsPanel.Controls.Add(checkNowButton);
+        updateButtonsPanel.Controls.Add(whatsNewButton);
+
         updatesLayout.Controls.Add(currentVersionRow);
         updatesLayout.Controls.Add(updateAvailabilityRow);
         updatesLayout.Controls.Add(_updateCheckBox);
-        updatesLayout.Controls.Add(checkNowButton);
+        updatesLayout.Controls.Add(updateButtonsPanel);
         updatesPanel.Controls.Add(updatesLayout);
 
         var warningsPanel = UiTheme.CreateSectionPanel();
@@ -265,7 +287,7 @@ public partial class SettingsTab : UserControl
 
         var aboutTextLabel = new Label
         {
-            Text = "ArbuzTweaker сделан при помощи вайбкодинга и создан для того, чтобы люди могли легко и понятно повышать производительность своих устройств.\n\n" +
+            Text = "ArbuzTweaker - open-source Windows utility для понятной настройки Windows, игровых конфигов и параметров запуска.\n\n" +
                    "Используемые методы твика в играх, по крайней мере автор на это надеется, легальные: программа не является читерским ПО, не даёт нечестного преимущества и работает через редактирование пользовательских конфигов, разрешённых файлов и настройку параметров запуска.\n\n" +
                    "Также твикер не лезет в память процесса, не делает DLL-инжект, не трогает сеть, античит или HWID, не занимается бан-обходом и не автоматизирует игру.\n\n" +
                    "Программа не является вирусом. Данные пользователей никуда не передаются и остаются только на компьютере пользователя.",
@@ -486,6 +508,23 @@ public partial class SettingsTab : UserControl
         }
     }
 
+    private void OpenLatestReleasePage()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = LatestReleaseUrl,
+                UseShellExecute = true
+            });
+            ShowStatus("Страница релиза открыта", UiTheme.AccentGreen);
+        }
+        catch
+        {
+            ShowStatus("Не удалось открыть страницу релиза", Color.Orange);
+        }
+    }
+
     private void ExportProfileButton_Click()
     {
         using var dialog = new SaveFileDialog
@@ -549,8 +588,8 @@ public partial class SettingsTab : UserControl
     {
         SetUpdateAvailabilityStatus("Проверка...", UiTheme.TextDim);
 
-        var (hasUpdate, newVersion, downloadUrl, assetName) = await _updateService.CheckForUpdateAsync();
-        if (!hasUpdate || string.IsNullOrWhiteSpace(downloadUrl))
+        var update = await _updateService.CheckForUpdateDetailsAsync();
+        if (!update.HasUpdate || string.IsNullOrWhiteSpace(update.DownloadUrl))
         {
             SetUpdateAvailabilityStatus("Новых обновлений нет", UiTheme.TextMuted);
 
@@ -566,13 +605,21 @@ public partial class SettingsTab : UserControl
             return;
         }
 
-        SetUpdateAvailabilityStatus($"Доступна версия {newVersion}", Color.Orange);
+        SetUpdateAvailabilityStatus(
+            string.IsNullOrWhiteSpace(update.ExpectedSha256)
+                ? $"Доступна версия {update.NewVersion}; SHA256 релиза не опубликован"
+                : $"Доступна версия {update.NewVersion}; SHA256 будет проверен",
+            Color.Orange);
 
         if (!promptDownload)
             return;
 
         var result = MessageBox.Show(
-            $"Доступна новая версия {newVersion}.\nСкачать обновление?",
+            $"Доступна новая версия {update.NewVersion}.\n" +
+            (string.IsNullOrWhiteSpace(update.ExpectedSha256)
+                ? "Контрольная сумма релиза не опубликована.\n\n"
+                : "Контрольная сумма релиза найдена и будет проверена после скачивания.\n\n") +
+            "Скачать обновление?",
             "Обновление",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Information);
@@ -580,20 +627,35 @@ public partial class SettingsTab : UserControl
         if (result != DialogResult.Yes)
             return;
 
-        var downloadedPath = await _updateService.DownloadUpdateAsync(downloadUrl);
+        var downloadedPath = await _updateService.DownloadUpdateAsync(update.DownloadUrl);
         if (!string.IsNullOrWhiteSpace(downloadedPath))
         {
-            var isInstaller = string.Equals(assetName, UpdateService.InstallerAssetName, StringComparison.OrdinalIgnoreCase)
+            var isInstaller = string.Equals(update.AssetName, UpdateService.InstallerAssetName, StringComparison.OrdinalIgnoreCase)
                 || downloadedPath.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
                 || downloadedPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
             if (isInstaller)
             {
                 var sha256 = _updateService.GetFileSha256(downloadedPath);
+                if (!_updateService.VerifyFileSha256(downloadedPath, update.ExpectedSha256))
+                {
+                    MessageBox.Show(
+                        "Обновление скачано, но контрольная сумма не совпала с релизом GitHub.\n\n" +
+                        "Установщик не будет запущен.",
+                        "Проверка обновления",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    SetUpdateAvailabilityStatus("SHA256 обновления не совпал", Color.OrangeRed);
+                    return;
+                }
+
                 var hasSignature = _updateService.HasAuthenticodeSignature(downloadedPath);
                 var installNowResult = MessageBox.Show(
                     "Обновление скачано.\n\n" +
                     $"SHA256: {sha256}\n\n" +
+                    (string.IsNullOrWhiteSpace(update.ExpectedSha256)
+                        ? "Контрольная сумма релиза не опубликована.\n\n"
+                        : "SHA256 совпал с релизом GitHub.\n\n") +
                     (hasSignature
                         ? "Цифровая подпись найдена.\n\n"
                         : "Внимание: цифровая подпись не найдена. Запускайте файл только если доверяете этому релизу.\n\n") +

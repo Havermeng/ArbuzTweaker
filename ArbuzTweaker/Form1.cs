@@ -223,7 +223,7 @@ public partial class Form1 : Form
         AddTab("Dota 2", new DotaTab(_configService, _dota2Service, _appSettingsService, _fileBackupService));
         AddTab("SCP:SL", new ScpSlTab(_scpSlService, _appSettingsService));
         AddTab("Прицел", new CrosshairTab());
-        AddTab("Функции", new FunctionsTab());
+        AddTab("Функции", new FunctionsTab(_logService));
         AddTab("Стороннее ПО", new ThirdPartyToolsTab(_nvidiaInspectorService, _msiAfterburnerService, _intelXtuService));
         AddTab("Настройки", new SettingsTab(_appSettingsService, _updateService, _fileBackupService, _registryBackupService, _profileService, _logService, ResetWarningChoices));
     }
@@ -353,31 +353,49 @@ public partial class Form1 : Form
     {
         try
         {
-            var (hasUpdate, newVersion, downloadUrl, assetName) = await _updateService.CheckForUpdateAsync();
-            if (hasUpdate && !string.IsNullOrEmpty(downloadUrl))
+            var update = await _updateService.CheckForUpdateDetailsAsync();
+            if (update.HasUpdate && !string.IsNullOrEmpty(update.DownloadUrl))
             {
                 var result = MessageBox.Show(
-                    $"Доступна новая версия {newVersion}.\nСкачать обновление?",
+                    $"Доступна новая версия {update.NewVersion}.\n" +
+                    (string.IsNullOrWhiteSpace(update.ExpectedSha256)
+                        ? "Контрольная сумма релиза не опубликована.\n\n"
+                        : "Контрольная сумма релиза найдена и будет проверена после скачивания.\n\n") +
+                    "Скачать обновление?",
                     "Обновление",
                     MessageBoxButtons.YesNo,
                     MessageBoxIcon.Information);
 
                 if (result == DialogResult.Yes)
                 {
-                    var downloadedPath = await _updateService.DownloadUpdateAsync(downloadUrl);
+                    var downloadedPath = await _updateService.DownloadUpdateAsync(update.DownloadUrl);
                     if (!string.IsNullOrWhiteSpace(downloadedPath))
                     {
-                        var isInstaller = string.Equals(assetName, UpdateService.InstallerAssetName, StringComparison.OrdinalIgnoreCase)
+                        var isInstaller = string.Equals(update.AssetName, UpdateService.InstallerAssetName, StringComparison.OrdinalIgnoreCase)
                             || downloadedPath.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
                             || downloadedPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
                         if (isInstaller)
                         {
                             var sha256 = _updateService.GetFileSha256(downloadedPath);
+                            if (!_updateService.VerifyFileSha256(downloadedPath, update.ExpectedSha256))
+                            {
+                                MessageBox.Show(
+                                    "Обновление скачано, но контрольная сумма не совпала с релизом GitHub.\n\n" +
+                                    "Установщик не будет запущен.",
+                                    "Проверка обновления",
+                                    MessageBoxButtons.OK,
+                                    MessageBoxIcon.Error);
+                                return;
+                            }
+
                             var hasSignature = _updateService.HasAuthenticodeSignature(downloadedPath);
                             var installNowResult = MessageBox.Show(
                                 "Обновление скачано.\n\n" +
                                 $"SHA256: {sha256}\n\n" +
+                                (string.IsNullOrWhiteSpace(update.ExpectedSha256)
+                                    ? "Контрольная сумма релиза не опубликована.\n\n"
+                                    : "SHA256 совпал с релизом GitHub.\n\n") +
                                 (hasSignature
                                     ? "Цифровая подпись найдена.\n\n"
                                     : "Внимание: цифровая подпись не найдена. Запускайте файл только если доверяете этому релизу.\n\n") +

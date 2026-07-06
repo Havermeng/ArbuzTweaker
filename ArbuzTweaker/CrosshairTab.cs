@@ -36,6 +36,7 @@ public sealed class CrosshairTab : UserControl
     private Control _opacitySettingControl = null!;
     private Control _optionsSettingControl = null!;
     private Label _statusLabel = null!;
+    private System.Windows.Forms.Timer _overlayKeepAliveTimer = null!;
     private CrosshairOverlayForm? _overlayForm;
     private Color _customColor = Color.White;
     private Color _customOutlineColor = Color.Black;
@@ -55,6 +56,8 @@ public sealed class CrosshairTab : UserControl
     {
         if (disposing)
         {
+            _overlayKeepAliveTimer?.Stop();
+            _overlayKeepAliveTimer?.Dispose();
             _overlayForm?.Dispose();
             _overlayForm = null;
         }
@@ -109,7 +112,7 @@ public sealed class CrosshairTab : UserControl
 
         var usageLabel = new Label
         {
-            Text = "Нажмите «Включить прицел». Если прицел уже включён, форма, размер и цвет меняются сразу. В полноэкранном режиме оверлей может работать некорректно; для стабильной работы лучше использовать оконный режим без рамки.",
+            Text = "Нажмите «Включить прицел». Если прицел уже включён, форма, размер и цвет меняются сразу. Если при входе в SCP:SL прицел пропадает, переключите игру в оконный режим или оконный режим без рамки. В полноэкранном режиме Windows-оверлеи могут скрываться игрой.",
             Font = new Font("Segoe UI", 10F, FontStyle.Regular),
             ForeColor = UiTheme.AccentGreen,
             MaximumSize = new Size(980, 0),
@@ -237,6 +240,9 @@ public sealed class CrosshairTab : UserControl
         RefreshPresetList();
         UpdateVisibleSettingsForShape();
         Controls.Add(root);
+
+        _overlayKeepAliveTimer = new System.Windows.Forms.Timer { Interval = 700 };
+        _overlayKeepAliveTimer.Tick += (s, e) => KeepCrosshairOverlayOnTop();
 
         _settingsLayout.ResumeLayout(false);
         settingsPanel.ResumeLayout(false);
@@ -921,7 +927,8 @@ public sealed class CrosshairTab : UserControl
             _overlayForm.Show();
 
         _overlayForm.UpdateSettings(settings);
-        _overlayForm.BringToFront();
+        _overlayForm.KeepOnTop();
+        _overlayKeepAliveTimer.Start();
         _isCrosshairEnabled = true;
         UpdateCrosshairStateUi();
     }
@@ -929,10 +936,22 @@ public sealed class CrosshairTab : UserControl
     private void HideCrosshair()
     {
         _isCrosshairEnabled = false;
+        _overlayKeepAliveTimer.Stop();
         if (_overlayForm != null && !_overlayForm.IsDisposed)
             _overlayForm.Hide();
 
         UpdateCrosshairStateUi();
+    }
+
+    private void KeepCrosshairOverlayOnTop()
+    {
+        if (!_isCrosshairEnabled || _overlayForm == null || _overlayForm.IsDisposed)
+        {
+            _overlayKeepAliveTimer.Stop();
+            return;
+        }
+
+        _overlayForm.KeepOnTop();
     }
 
     private void UpdateCrosshairStateUi()

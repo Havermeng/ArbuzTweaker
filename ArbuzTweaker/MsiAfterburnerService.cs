@@ -132,9 +132,9 @@ public sealed class MsiAfterburnerService
 
             return ThirdPartyToolInstallResult.Failure(string.IsNullOrWhiteSpace(combined) ? "winget вернул ошибку." : combined);
         }
-        catch (Exception ex)
+        catch
         {
-            return ThirdPartyToolInstallResult.Failure($"Не удалось запустить winget: {ex.Message}");
+            return ThirdPartyToolInstallResult.Failure("Не получилось запустить winget. Подробности можно проверить через журнал Windows или запуск команды вручную.");
         }
     }
 
