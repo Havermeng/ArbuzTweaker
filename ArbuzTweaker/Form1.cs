@@ -392,6 +392,7 @@ public partial class Form1 : Form
                             var hasSignature = _updateService.HasAuthenticodeSignature(downloadedPath);
                             var installNowResult = MessageBox.Show(
                                 "Обновление скачано.\n\n" +
+                                $"Файл сохранён:\n{downloadedPath}\n\n" +
                                 $"SHA256: {sha256}\n\n" +
                                 (string.IsNullOrWhiteSpace(update.ExpectedSha256)
                                     ? "Контрольная сумма релиза не опубликована.\n\n"
@@ -399,19 +400,32 @@ public partial class Form1 : Form
                                 (hasSignature
                                     ? "Цифровая подпись найдена.\n\n"
                                     : "Внимание: цифровая подпись не найдена. Запускайте файл только если доверяете этому релизу.\n\n") +
-                                "Установить его сейчас?",
+                                "Установить его сейчас? ArbuzTweaker закроется, обновится и запустится снова.",
                                 "Установка обновления",
                                 MessageBoxButtons.YesNo,
                                 hasSignature ? MessageBoxIcon.Question : MessageBoxIcon.Warning);
 
-                            if (installNowResult == DialogResult.Yes && _updateService.LaunchDownloadedUpdate(downloadedPath))
+                            if (installNowResult == DialogResult.Yes)
                             {
-                                Close();
-                                return;
+                                var launchResult = _updateService.LaunchDownloadedUpdate(downloadedPath, Environment.ProcessId, Application.ExecutablePath);
+                                if (launchResult.Started)
+                                {
+                                    if (launchResult.ShouldCloseApplication)
+                                    {
+                                        Close();
+                                        return;
+                                    }
+
+                                    MessageBox.Show(launchResult.Message, "Обновление", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                }
+                                else
+                                {
+                                    MessageBox.Show(launchResult.Message, "Ошибка обновления", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                }
                             }
                         }
 
-                        MessageBox.Show("Обновление скачано.", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show($"Обновление скачано:\n{downloadedPath}", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                 }
             }

@@ -22,11 +22,15 @@ public class UpdateService
     private readonly string _downloadPath;
 
     public string CurrentVersion => _currentVersion;
+    public string DownloadPath => _downloadPath;
 
     public UpdateService(string currentVersion)
     {
         _currentVersion = currentVersion;
-        _downloadPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Updates");
+        _downloadPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ArbuzTweaker",
+            "Updates");
     }
 
     public async Task<(bool hasUpdate, string? newVersion, string? downloadUrl, string? assetName)> CheckForUpdateAsync()
@@ -92,13 +96,38 @@ public class UpdateService
         }
     }
 
-    public bool LaunchDownloadedUpdate(string filePath)
+    public UpdateLaunchResult LaunchDownloadedUpdate(string filePath, int currentProcessId, string restartExecutablePath)
     {
         try
         {
+            if (!File.Exists(filePath))
+                return UpdateLaunchResult.Failure("Файл обновления не найден.");
+
+            var extension = Path.GetExtension(filePath);
+            if (extension.Equals(".msi", StringComparison.OrdinalIgnoreCase))
+                return LaunchMsiSelfUpdate(filePath, currentProcessId, restartExecutablePath);
+
             Process.Start(new ProcessStartInfo
             {
                 FileName = filePath,
+                UseShellExecute = true
+            });
+            return UpdateLaunchResult.Success(false, "Файл обновления открыт.");
+        }
+        catch
+        {
+            return UpdateLaunchResult.Failure("Не удалось запустить обновление.");
+        }
+    }
+
+    public bool OpenDownloadFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(_downloadPath);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = _downloadPath,
                 UseShellExecute = true
             });
             return true;
@@ -212,6 +241,53 @@ public class UpdateService
 
         return null;
     }
+
+    private UpdateLaunchResult LaunchMsiSelfUpdate(string msiPath, int currentProcessId, string restartExecutablePath)
+    {
+        Directory.CreateDirectory(_downloadPath);
+
+        var scriptPath = Path.Combine(_downloadPath, "Install-ArbuzTweaker-Update.ps1");
+        var logPath = Path.Combine(_downloadPath, "install-update.log");
+        var script = string.Join(Environment.NewLine, new[]
+        {
+            "$ErrorActionPreference = 'Continue'",
+            "$msi = " + ToPowerShellSingleQuoted(msiPath),
+            "$app = " + ToPowerShellSingleQuoted(restartExecutablePath),
+            "$log = " + ToPowerShellSingleQuoted(logPath),
+            "$pidToWait = " + currentProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "try { Wait-Process -Id $pidToWait -Timeout 90 -ErrorAction SilentlyContinue } catch { }",
+            "$arguments = '/i \"' + $msi + '\" /passive /norestart /l*v \"' + $log + '\"'",
+            "$process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments -Wait -PassThru",
+            "$exitCode = if ($null -ne $process) { $process.ExitCode } else { 1 }",
+            "if ($exitCode -eq 0 -or $exitCode -eq 3010) {",
+            "    if (Test-Path -LiteralPath $app) { Start-Process -FilePath $app }",
+            "} else {",
+            "    Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,\"' + $msi + '\"')",
+            "}",
+            "exit $exitCode",
+            string.Empty
+        });
+
+        File.WriteAllText(scriptPath, script);
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "powershell.exe",
+            Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
+        });
+
+        return UpdateLaunchResult.Success(
+            true,
+            "Установщик обновления запущен. ArbuzTweaker закроется, обновится и запустится снова.");
+    }
+
+    private static string ToPowerShellSingleQuoted(string value)
+    {
+        return "'" + value.Replace("'", "''") + "'";
+    }
 }
 
 public sealed record UpdateCheckResult(
@@ -222,4 +298,20 @@ public sealed record UpdateCheckResult(
     string? ExpectedSha256)
 {
     public static UpdateCheckResult NoUpdate { get; } = new(false, null, null, null, null);
+}
+
+public sealed record UpdateLaunchResult(
+    bool Started,
+    bool ShouldCloseApplication,
+    string Message)
+{
+    public static UpdateLaunchResult Success(bool shouldCloseApplication, string message)
+    {
+        return new UpdateLaunchResult(true, shouldCloseApplication, message);
+    }
+
+    public static UpdateLaunchResult Failure(string message)
+    {
+        return new UpdateLaunchResult(false, false, message);
+    }
 }
