@@ -685,7 +685,11 @@ public partial class SettingsTab : UserControl
 
                 if (installNowResult == DialogResult.Yes)
                 {
-                    var launchResult = _updateService.LaunchDownloadedUpdate(downloadedPath, Environment.ProcessId, Application.ExecutablePath);
+                    var launchResult = _updateService.LaunchDownloadedUpdate(
+                        downloadedPath,
+                        Environment.ProcessId,
+                        Application.ExecutablePath,
+                        update.NewVersion);
                     if (launchResult.Started)
                     {
                         if (launchResult.ShouldCloseApplication)

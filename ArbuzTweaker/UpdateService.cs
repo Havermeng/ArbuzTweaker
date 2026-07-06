@@ -96,7 +96,11 @@ public class UpdateService
         }
     }
 
-    public UpdateLaunchResult LaunchDownloadedUpdate(string filePath, int currentProcessId, string restartExecutablePath)
+    public UpdateLaunchResult LaunchDownloadedUpdate(
+        string filePath,
+        int currentProcessId,
+        string restartExecutablePath,
+        string? expectedVersion = null)
     {
         try
         {
@@ -105,7 +109,7 @@ public class UpdateService
 
             var extension = Path.GetExtension(filePath);
             if (extension.Equals(".msi", StringComparison.OrdinalIgnoreCase))
-                return LaunchMsiSelfUpdate(filePath, currentProcessId, restartExecutablePath);
+                return LaunchMsiSelfUpdate(filePath, currentProcessId, restartExecutablePath, expectedVersion);
 
             Process.Start(new ProcessStartInfo
             {
@@ -242,7 +246,11 @@ public class UpdateService
         return null;
     }
 
-    private UpdateLaunchResult LaunchMsiSelfUpdate(string msiPath, int currentProcessId, string restartExecutablePath)
+    private UpdateLaunchResult LaunchMsiSelfUpdate(
+        string msiPath,
+        int currentProcessId,
+        string restartExecutablePath,
+        string? expectedVersion)
     {
         Directory.CreateDirectory(_downloadPath);
 
@@ -254,12 +262,24 @@ public class UpdateService
             "$msi = " + ToPowerShellSingleQuoted(msiPath),
             "$app = " + ToPowerShellSingleQuoted(restartExecutablePath),
             "$log = " + ToPowerShellSingleQuoted(logPath),
+            "$expectedVersion = " + ToPowerShellSingleQuoted(expectedVersion ?? string.Empty),
             "$pidToWait = " + currentProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             "try { Wait-Process -Id $pidToWait -Timeout 90 -ErrorAction SilentlyContinue } catch { }",
             "$arguments = '/i \"' + $msi + '\" /passive /norestart /l*v \"' + $log + '\"'",
             "$process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $arguments -Wait -PassThru",
             "$exitCode = if ($null -ne $process) { $process.ExitCode } else { 1 }",
             "if ($exitCode -eq 0 -or $exitCode -eq 3010) {",
+            "    $deadline = (Get-Date).AddSeconds(90)",
+            "    while ((Get-Date) -lt $deadline) {",
+            "        if (Test-Path -LiteralPath $app) {",
+            "            if ([string]::IsNullOrWhiteSpace($expectedVersion)) { break }",
+            "            try {",
+            "                $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($app).FileVersion",
+            "                if ($fileVersion -like ($expectedVersion + '*')) { break }",
+            "            } catch { }",
+            "        }",
+            "        Start-Sleep -Seconds 1",
+            "    }",
             "    if (Test-Path -LiteralPath $app) { Start-Process -FilePath $app }",
             "} else {",
             "    Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,\"' + $msi + '\"')",
