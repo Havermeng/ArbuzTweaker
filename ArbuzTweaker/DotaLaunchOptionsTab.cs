@@ -38,6 +38,8 @@ public partial class DotaLaunchOptionsTab : UserControl
     private bool _includeAutoexecLaunchOption;
     private bool _isUpdatingLaunchOptionsUi;
     private bool _isLoadingSteamAccounts;
+    private int _statusToken;
+    private int _lastOptionsPanelWidth = -1;
 
     public DotaLaunchOptionsTab(ConfigService configService, Dota2Service dota2Service, AppSettingsService appSettingsService)
     {
@@ -161,6 +163,7 @@ public partial class DotaLaunchOptionsTab : UserControl
         {
             Text = "Эта вкладка читает и меняет строку LaunchOptions в localconfig.vdf. Здесь настраиваются именно параметры запуска Steam, а не autoexec.cfg.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 12)
@@ -195,6 +198,7 @@ public partial class DotaLaunchOptionsTab : UserControl
         {
             Text = "Здесь отображаются и редактируются команды из LaunchOptions. Каждая команда должна быть с новой строки. +exec autoexec.cfg тоже хранится здесь.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 10)
@@ -223,6 +227,7 @@ public partial class DotaLaunchOptionsTab : UserControl
         {
             Text = "Эти пункты добавляют или убирают строки в LaunchOptions. Список ниже автоматически подстраивается под ширину окна.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 10)
@@ -237,7 +242,11 @@ public partial class DotaLaunchOptionsTab : UserControl
             Margin = new Padding(0, 0, 0, 12)
         };
         UiTheme.StyleListPanel(_optionsPanel);
-        _optionsPanel.Resize += (s, e) => PopulateLaunchOptionsPanel();
+        _optionsPanel.Resize += (s, e) =>
+        {
+            if (_optionsPanel.ClientSize.Width != _lastOptionsPanelWidth)
+                PopulateLaunchOptionsPanel();
+        };
         PopulateLaunchOptionsPanel();
 
         var buttonsPanel = new FlowLayoutPanel
@@ -252,7 +261,7 @@ public partial class DotaLaunchOptionsTab : UserControl
         var applyButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
         applyButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveAndApplyAsync);
 
-        var helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
+        var helpButton = new Button { Text = "Как это работает?", AutoSize = true, MinimumSize = new Size(0, 35), Padding = new Padding(10, 0, 10, 0), Margin = new Padding(0, 0, 10, 0) };
         helpButton.Click += (s, e) => ShowHelpDialog();
 
         var openFileButton = new Button { Text = "Показать localconfig.vdf", Size = new Size(230, 35), Margin = new Padding(0, 0, 10, 0) };
@@ -433,6 +442,14 @@ public partial class DotaLaunchOptionsTab : UserControl
         string successMessage,
         string actionLabel)
     {
+        // «Не нужно обновлять» и «некуда писать» — разные случаи: без этой проверки
+        // отсутствие localconfig.vdf заканчивалось зелёным «Сохранено» без записи.
+        if (!await _dota2Service.HasLocalConfigAsync())
+        {
+            ShowStatus("Не найден localconfig.vdf выбранного Steam-аккаунта", Color.Orange);
+            return;
+        }
+
         var needsLaunchOptionsUpdate = await _dota2Service.NeedsExactLaunchOptionsUpdateAsync(
             enabledOptions,
             _includeAutoexecLaunchOption);
@@ -479,7 +496,7 @@ public partial class DotaLaunchOptionsTab : UserControl
 
         if (steamClosed)
         {
-            if (_dota2Service.StartSteam())
+            if (await _dota2Service.StartSteamAsync())
                 ShowStatus($"{actionLabel}. Steam перезапущен", Color.Green);
             else
                 ShowStatus($"{actionLabel}. Не удалось запустить Steam", Color.Orange);
@@ -504,9 +521,10 @@ public partial class DotaLaunchOptionsTab : UserControl
         var selectedOptions = new HashSet<string>(GetSelectedOptionsFromText(), StringComparer.OrdinalIgnoreCase);
         var preserveState = _isUpdatingLaunchOptionsUi;
         _isUpdatingLaunchOptionsUi = true;
+        _lastOptionsPanelWidth = _optionsPanel.ClientSize.Width;
 
         _optionsPanel.SuspendLayout();
-        _optionsPanel.Controls.Clear();
+        UiTheme.ClearAndDisposeControls(_optionsPanel);
 
         var y = 8;
         var rowIndex = 0;
@@ -516,7 +534,7 @@ public partial class DotaLaunchOptionsTab : UserControl
         y = UiTheme.AddListSectionHeader(_optionsPanel, y, availableWidth, "Параметры запуска");
         AddLaunchOptionRow(ref y, ref rowIndex, ref _highCheckBox, HighOption, "Выставляет высокий приоритет процесса Dota 2.", selectedOptions.Contains(HighOption), searchQuery, HighCheckBox_CheckedChanged);
         AddLaunchOptionRow(ref y, ref rowIndex, ref _noHltvCheckBox, NoHltvOption, "Отключает компоненты HLTV/GOTV, если они не используются.", selectedOptions.Contains(NoHltvOption), searchQuery, NoHltvCheckBox_CheckedChanged);
-        AddLaunchOptionRow(ref y, ref rowIndex, ref _threadsCheckBox, _threadsOption, "Автоматически подставляет количество физических ядер процессора в параметр -threads.", selectedOptions.Any(IsThreadsOption), searchQuery, ThreadsCheckBox_CheckedChanged);
+        AddLaunchOptionRow(ref y, ref rowIndex, ref _threadsCheckBox, _threadsOption, "Автоматически подставляет количество логических процессоров в параметр -threads.", selectedOptions.Any(IsThreadsOption), searchQuery, ThreadsCheckBox_CheckedChanged);
         AddLaunchOptionRow(ref y, ref rowIndex, ref _novidCheckBox, NovidOption, "Отключает вступительный ролик при запуске игры.", selectedOptions.Contains(NovidOption), searchQuery, NovidCheckBox_CheckedChanged);
         AddLaunchOptionRow(ref y, ref rowIndex, ref _mapDotaCheckBox, MapDotaOption, "Запускает загрузку карты dota при старте клиента.", selectedOptions.Contains(MapDotaOption), searchQuery, MapDotaCheckBox_CheckedChanged);
         AddLaunchOptionRow(ref y, ref rowIndex, ref _prewarmCheckBox, PrewarmOption, "Предзагружает игровые ресурсы; может уменьшить проблемы при загрузке в матч.", selectedOptions.Contains(PrewarmOption), searchQuery, PrewarmCheckBox_CheckedChanged);
@@ -809,10 +827,12 @@ public partial class DotaLaunchOptionsTab : UserControl
 
     private async void ShowStatus(string message, Color color)
     {
+        var token = ++_statusToken;
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
-        await Task.Delay(2000);
-        _statusLabel.Text = string.Empty;
+        await Task.Delay(4000);
+        if (token == _statusToken)
+            _statusLabel.Text = string.Empty;
     }
 }
 

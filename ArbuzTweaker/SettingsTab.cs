@@ -25,6 +25,8 @@ public partial class SettingsTab : UserControl
     private CheckBox _safeModeCheckBox = null!;
     private Label _statusLabel = null!;
     private bool _isLoadingSettings;
+    private bool _isCheckingUpdates;
+    private int _statusToken;
 
     public SettingsTab(
         AppSettingsService appSettingsService,
@@ -327,6 +329,8 @@ public partial class SettingsTab : UserControl
         root.Controls.Add(_statusLabel, 0, 6);
 
         Controls.Add(root);
+
+        UiTheme.EnableDynamicLabelWrapForDescendants(root);
     }
 
     private static FlowLayoutPanel CreateVerticalSectionLayout()
@@ -384,10 +388,11 @@ public partial class SettingsTab : UserControl
         _safeModeCheckBox.Checked = settings.SafeModeUserConfigOnly;
         _isLoadingSettings = false;
 
-        if (settings.CheckForUpdatesOnStartup)
-            _ = RefreshUpdateAvailabilityAsync(false);
-        else
-            SetUpdateAvailabilityStatus("Автопроверка отключена", UiTheme.TextDim);
+        // Стартовую проверку уже делает Form1 — второй параллельный запрос к GitHub
+        // здесь только расходовал лимит API (60 запросов/час без авторизации).
+        SetUpdateAvailabilityStatus(
+            settings.CheckForUpdatesOnStartup ? "Проверяется при запуске приложения" : "Автопроверка отключена",
+            UiTheme.TextDim);
     }
 
     private void SyncSafeModeFromSettings()
@@ -604,9 +609,43 @@ public partial class SettingsTab : UserControl
 
     private async Task RefreshUpdateAvailabilityAsync(bool promptDownload)
     {
+        if (_isCheckingUpdates)
+            return;
+
+        _isCheckingUpdates = true;
+        try
+        {
+            await RefreshUpdateAvailabilityCoreAsync(promptDownload);
+        }
+        finally
+        {
+            _isCheckingUpdates = false;
+        }
+    }
+
+    private async Task RefreshUpdateAvailabilityCoreAsync(bool promptDownload)
+    {
         SetUpdateAvailabilityStatus("Проверка...", UiTheme.TextDim);
 
         var update = await _updateService.CheckForUpdateDetailsAsync();
+
+        if (!update.CheckSucceeded)
+        {
+            SetUpdateAvailabilityStatus("Не удалось проверить обновления", Color.Orange);
+
+            if (promptDownload)
+            {
+                MessageBox.Show(
+                    this,
+                    "Не удалось проверить обновления: нет соединения с GitHub или превышен лимит запросов. Попробуйте позже.",
+                    "Проверка обновлений",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+
+            return;
+        }
+
         if (!update.HasUpdate || string.IsNullOrWhiteSpace(update.DownloadUrl))
         {
             SetUpdateAvailabilityStatus("Новых обновлений нет", UiTheme.TextMuted);
@@ -614,6 +653,7 @@ public partial class SettingsTab : UserControl
             if (promptDownload)
             {
                 MessageBox.Show(
+                    this,
                     "Новых обновлений нет или релиз пока не опубликован.",
                     "Проверка обновлений",
                     MessageBoxButtons.OK,
@@ -652,21 +692,23 @@ public partial class SettingsTab : UserControl
                 || downloadedPath.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
                 || downloadedPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
+            // SHA256 сверяется для любого скачанного файла, включая portable-архив:
+            // диалог выше уже пообещал пользователю эту проверку.
+            var sha256 = _updateService.GetFileSha256(downloadedPath);
+            if (!_updateService.VerifyFileSha256(downloadedPath, update.ExpectedSha256))
+            {
+                MessageBox.Show(
+                    "Обновление скачано, но контрольная сумма не совпала с релизом GitHub.\n\n" +
+                    "Файл не будет использован.",
+                    "Проверка обновления",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                SetUpdateAvailabilityStatus("SHA256 обновления не совпал", Color.OrangeRed);
+                return;
+            }
+
             if (isInstaller)
             {
-                var sha256 = _updateService.GetFileSha256(downloadedPath);
-                if (!_updateService.VerifyFileSha256(downloadedPath, update.ExpectedSha256))
-                {
-                    MessageBox.Show(
-                        "Обновление скачано, но контрольная сумма не совпала с релизом GitHub.\n\n" +
-                        "Установщик не будет запущен.",
-                        "Проверка обновления",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error);
-                    SetUpdateAvailabilityStatus("SHA256 обновления не совпал", Color.OrangeRed);
-                    return;
-                }
-
                 var hasSignature = _updateService.HasAuthenticodeSignature(downloadedPath);
                 var installNowResult = MessageBox.Show(
                     "Обновление скачано.\n\n" +
@@ -705,6 +747,8 @@ public partial class SettingsTab : UserControl
                         MessageBox.Show(launchResult.Message, "Ошибка обновления", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
+
+                return;
             }
 
             MessageBox.Show(
@@ -730,9 +774,11 @@ public partial class SettingsTab : UserControl
 
     private async void ShowStatus(string message, Color color)
     {
+        var token = ++_statusToken;
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
-        await Task.Delay(2000);
-        _statusLabel.Text = string.Empty;
+        await Task.Delay(4000);
+        if (token == _statusToken)
+            _statusLabel.Text = string.Empty;
     }
 }

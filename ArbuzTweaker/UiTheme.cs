@@ -21,6 +21,16 @@ internal static class UiTheme
 
     private static readonly Dictionary<string, Image> SidebarIcons = new();
 
+    // Шрифты общие и не диспозятся: Control.Font не владеет шрифтом, а создание
+    // нового Font на каждый вызов Style* утекало GDI-хендлами (лимит 10000 на процесс).
+    private static readonly Font SidebarButtonFont = new("Segoe UI Semibold", 10.5F, FontStyle.Regular);
+    private static readonly Font ActionButtonFont = new("Segoe UI Semibold", 10F, FontStyle.Regular);
+    private static readonly Font EditorFont = new("Consolas", 10);
+    private static readonly Font SearchFont = new("Segoe UI", 10);
+    private static readonly Font SectionHeaderFont = new("Segoe UI Semibold", 9.5F, FontStyle.Regular);
+    private static readonly Font SectionTitleFont = new("Segoe UI Semibold", 10.5F, FontStyle.Regular);
+    private static readonly Font ListDescriptionFont = new("Segoe UI", 9.5F);
+
     public static void StyleSidebarButton(Button button, bool active)
     {
         button.FlatStyle = FlatStyle.Flat;
@@ -30,7 +40,7 @@ internal static class UiTheme
         button.FlatAppearance.MouseDownBackColor = AccentBlue;
         button.BackColor = active ? AccentBlue : Surface;
         button.ForeColor = TextPrimary;
-        button.Font = new Font("Segoe UI Semibold", 10.5F, FontStyle.Regular);
+        button.Font = SidebarButtonFont;
         button.TextAlign = ContentAlignment.MiddleLeft;
         button.Padding = new Padding(12, 0, 0, 0);
         button.Cursor = Cursors.Hand;
@@ -48,7 +58,7 @@ internal static class UiTheme
         button.FlatAppearance.MouseDownBackColor = primary ? AccentBlue : Color.FromArgb(56, 56, 56);
         button.BackColor = primary ? AccentBlue : SurfaceAlt;
         button.ForeColor = TextPrimary;
-        button.Font = new Font("Segoe UI Semibold", 10F, FontStyle.Regular);
+        button.Font = ActionButtonFont;
         button.Cursor = Cursors.Hand;
     }
 
@@ -57,7 +67,7 @@ internal static class UiTheme
         textBox.BackColor = Color.FromArgb(24, 24, 24);
         textBox.ForeColor = TextPrimary;
         textBox.BorderStyle = BorderStyle.FixedSingle;
-        textBox.Font = new Font("Consolas", 10);
+        textBox.Font = EditorFont;
         textBox.HideSelection = false;
     }
 
@@ -66,13 +76,129 @@ internal static class UiTheme
         textBox.BackColor = Color.FromArgb(24, 24, 24);
         textBox.ForeColor = TextPrimary;
         textBox.BorderStyle = BorderStyle.FixedSingle;
-        textBox.Font = new Font("Segoe UI", 10);
+        textBox.Font = SearchFont;
+    }
+
+    // Подписи с AutoSize и фиксированным MaximumSize обрезались, когда контентная
+    // область уже зашитой ширины: перенос строк подгоняется под реальную ширину контейнера.
+    public static void EnableDynamicLabelWrap(Control container, params Control[] controls)
+    {
+        void UpdateWidths()
+        {
+            var available = container.ClientSize.Width;
+            foreach (var control in controls)
+            {
+                var width = Math.Max(240, available - control.Margin.Horizontal - container.Padding.Horizontal - 8);
+                control.MaximumSize = new Size(width, 0);
+            }
+        }
+
+        container.SizeChanged += (s, e) => UpdateWidths();
+        UpdateWidths();
+    }
+
+    // То же самое, но для всего дерева контролов: каждой подписи с AutoSize и заданным
+    // MaximumSize ширина переноса пересчитывается от реальной ширины её родителя.
+    public static void EnableDynamicLabelWrapForDescendants(Control root)
+    {
+        void UpdateWidths()
+        {
+            void Walk(Control parent)
+            {
+                foreach (Control child in parent.Controls)
+                {
+                    if (child is Label or CheckBox && child.AutoSize && child.MaximumSize.Width > 0 && parent.ClientSize.Width > 0)
+                    {
+                        var width = Math.Max(240, parent.ClientSize.Width - child.Left - child.Margin.Right - 10);
+                        child.MaximumSize = new Size(width, 0);
+                    }
+
+                    Walk(child);
+                }
+            }
+
+            Walk(root);
+        }
+
+        root.SizeChanged += (s, e) => UpdateWidths();
+        UpdateWidths();
     }
 
     public static void StyleListPanel(Panel panel)
     {
         panel.BorderStyle = BorderStyle.None;
         panel.BackColor = Surface;
+    }
+
+    public static void ClearAndDisposeControls(Control container)
+    {
+        var oldControls = new Control[container.Controls.Count];
+        container.Controls.CopyTo(oldControls, 0);
+        container.Controls.Clear();
+
+        foreach (var control in oldControls)
+            control.Dispose();
+    }
+
+    public static void StyleTabControl(TabControl tabControl)
+    {
+        tabControl.DrawMode = TabDrawMode.OwnerDrawFixed;
+        tabControl.SizeMode = TabSizeMode.Fixed;
+        tabControl.ItemSize = new Size(170, 34);
+        tabControl.DrawItem += TabControl_DrawItem;
+
+        // Заголовки растягиваются на всю ширину: пустой хвост полосы вкладок ComCtl
+        // рисует системным светлым цветом, и на тёмной теме он выглядел белой полосой.
+        // Флаг и гистерезис обязательны: смена ItemSize сама меняет ClientSize и снова
+        // вызывает SizeChanged — без защиты это бесконечная рекурсия (stack overflow).
+        var stretchingTabHeaders = false;
+        void StretchTabHeaders()
+        {
+            if (stretchingTabHeaders || tabControl.TabCount == 0 || tabControl.ClientSize.Width <= 0)
+                return;
+
+            stretchingTabHeaders = true;
+            try
+            {
+                var width = Math.Max(120, (tabControl.ClientSize.Width - 6) / tabControl.TabCount);
+                if (Math.Abs(tabControl.ItemSize.Width - width) > 2)
+                    tabControl.ItemSize = new Size(width, 34);
+            }
+            finally
+            {
+                stretchingTabHeaders = false;
+            }
+        }
+
+        tabControl.SizeChanged += (s, e) => StretchTabHeaders();
+        tabControl.ControlAdded += (s, e) => StretchTabHeaders();
+        tabControl.HandleCreated += (s, e) => StretchTabHeaders();
+    }
+
+    private static void TabControl_DrawItem(object? sender, DrawItemEventArgs e)
+    {
+        if (sender is not TabControl tabControl || e.Index < 0 || e.Index >= tabControl.TabPages.Count)
+            return;
+
+        var isSelected = e.Index == tabControl.SelectedIndex;
+        var tabRect = tabControl.GetTabRect(e.Index);
+
+        using var backBrush = new SolidBrush(isSelected ? Surface : SurfaceAlt);
+        e.Graphics.FillRectangle(backBrush, tabRect);
+
+        if (isSelected)
+        {
+            using var accentBrush = new SolidBrush(AccentBlue);
+            e.Graphics.FillRectangle(accentBrush, tabRect.X, tabRect.Bottom - 3, tabRect.Width, 3);
+        }
+
+        TextRenderer.DrawText(
+            e.Graphics,
+            tabControl.TabPages[e.Index].Text,
+            tabControl.Font,
+            tabRect,
+            isSelected ? TextPrimary : TextMuted,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 
     public static int AddListSectionHeader(Panel panel, int y, int width, string text)
@@ -83,7 +209,7 @@ internal static class UiTheme
             Location = new Point(8, y),
             Size = new Size(width, 28),
             AutoSize = false,
-            Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Regular),
+            Font = SectionHeaderFont,
             ForeColor = AccentGreen,
             BackColor = SurfaceAlt,
             Padding = new Padding(8, 5, 0, 0)
@@ -109,7 +235,7 @@ internal static class UiTheme
         var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.40), 240, 360);
         var descriptionX = checkBoxWidth + 24;
         var descriptionWidth = Math.Max(220, availableWidth - checkBoxWidth - 36);
-        var descriptionFont = new Font("Segoe UI", 9.5F);
+        var descriptionFont = ListDescriptionFont;
         var descriptionSize = TextRenderer.MeasureText(
             description,
             descriptionFont,
@@ -196,7 +322,7 @@ internal static class UiTheme
         return new Label
         {
             Text = text,
-            Font = new Font("Segoe UI Semibold", 10.5F, FontStyle.Regular),
+            Font = SectionTitleFont,
             ForeColor = TextPrimary,
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 10)
@@ -247,6 +373,12 @@ internal static class UiTheme
 
     private static Image CreateSidebarIcon(string key)
     {
+        if (key == "Dota 2" && TryLoadSteamShortcutIcon("Dota 2") is Image dotaIcon)
+            return dotaIcon;
+
+        if (key == "SCP:SL" && TryLoadSteamShortcutIcon("SCP Secret Laboratory") is Image scpIcon)
+            return scpIcon;
+
         var bitmap = new Bitmap(18, 18);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -258,13 +390,9 @@ internal static class UiTheme
                 DrawWindowsIcon(graphics);
                 break;
             case "Dota 2":
-                if (TryLoadSteamShortcutIcon("Dota 2") is Image dotaIcon)
-                    return dotaIcon;
                 DrawDotaIcon(graphics);
                 break;
             case "SCP:SL":
-                if (TryLoadSteamShortcutIcon("SCP Secret Laboratory") is Image scpIcon)
-                    return scpIcon;
                 DrawScpIcon(graphics);
                 break;
             case "Прицел":

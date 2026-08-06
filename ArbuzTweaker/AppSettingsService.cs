@@ -47,7 +47,9 @@ public sealed class AppSettingsService
                 settings,
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
 
-            File.WriteAllText(path, content);
+            var tempPath = path + ".tmp";
+            File.WriteAllText(tempPath, content);
+            File.Move(tempPath, path, true);
         }
         catch
         {

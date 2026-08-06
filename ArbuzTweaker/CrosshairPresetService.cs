@@ -8,6 +8,7 @@ internal sealed class CrosshairPresetService
     private const string DefaultPresetName = "Шаблон 1";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly string _presetsPath;
+    private bool _lastLoadFailed;
 
     public CrosshairPresetService(ConfigService configService)
     {
@@ -87,6 +88,8 @@ internal sealed class CrosshairPresetService
     {
         try
         {
+            _lastLoadFailed = false;
+
             if (!File.Exists(_presetsPath))
                 return new CrosshairPresetStore();
 
@@ -95,18 +98,33 @@ internal sealed class CrosshairPresetService
         }
         catch
         {
+            // Файл существует, но прочитать его не удалось (занят, битый JSON, права).
+            // Пометка запрещает перезаписывать его пустым store — иначе одна неудачная
+            // загрузка уничтожала все сохранённые шаблоны.
+            _lastLoadFailed = true;
             return new CrosshairPresetStore();
         }
     }
 
     private void SaveStore(CrosshairPresetStore store)
     {
-        var directory = Path.GetDirectoryName(_presetsPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
+        if (_lastLoadFailed)
+            return;
 
-        var content = JsonSerializer.Serialize(store, JsonOptions);
-        File.WriteAllText(_presetsPath, content);
+        try
+        {
+            var directory = Path.GetDirectoryName(_presetsPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
+            var content = JsonSerializer.Serialize(store, JsonOptions);
+            var tempPath = _presetsPath + ".tmp";
+            File.WriteAllText(tempPath, content);
+            File.Move(tempPath, _presetsPath, true);
+        }
+        catch
+        {
+        }
     }
 
     private static List<CrosshairPresetData> GetShapePresets(CrosshairPresetStore store, CrosshairShape shape)
@@ -153,7 +171,11 @@ internal sealed class CrosshairPresetData
     public int Gap { get; set; }
     public int Thickness { get; set; }
     public int OpacityPercent { get; set; } = 100;
-    public int ColorArgb { get; set; }
+
+    // Без явного дефолта отсутствующее в JSON поле давало ARGB(0,0,0,0) —
+    // полностью прозрачный прицел, который «включён», но невидим.
+    public int ColorArgb { get; set; } = Color.White.ToArgb();
+
     public int OutlineColorArgb { get; set; } = Color.Black.ToArgb();
     public bool ShowCenterDot { get; set; } = true;
     public bool ShowOutline { get; set; }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace ArbuzTweaker;
@@ -12,6 +13,8 @@ public sealed class FunctionsTab : UserControl
     private readonly AppLogService _logService;
     private readonly Label _statusLabel;
     private readonly Button _turnOffScreenButton;
+    private readonly Label _explorerStatusLabel;
+    private readonly Button _restartExplorerButton;
 
     public FunctionsTab(AppLogService logService)
     {
@@ -23,10 +26,11 @@ public sealed class FunctionsTab : UserControl
             BackColor = UiTheme.Surface,
             Padding = new Padding(26, 20, 26, 20),
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             AutoScroll = true
         };
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -103,11 +107,68 @@ public sealed class FunctionsTab : UserControl
         screenLayout.Controls.Add(_statusLabel);
         screenPanel.Controls.Add(screenLayout);
 
+        var explorerPanel = UiTheme.CreateSectionPanel();
+        explorerPanel.Padding = new Padding(16);
+
+        var explorerTitleLabel = UiTheme.CreateSectionTitle("Перезапуск Проводника");
+        explorerTitleLabel.Margin = new Padding(0, 0, 0, 8);
+
+        var explorerDescriptionLabel = new Label
+        {
+            Text = "Перезапускает только explorer.exe и обновляет панель задач, значки и рабочий стол. Полезно, если после выхода из сна элементы отображаются неправильно. Открытые окна Проводника будут закрыты.",
+            Font = new Font("Segoe UI", 10F, FontStyle.Regular),
+            ForeColor = UiTheme.TextMuted,
+            AutoSize = true,
+            MaximumSize = new Size(900, 0),
+            Margin = new Padding(0, 0, 0, 12)
+        };
+
+        _restartExplorerButton = new Button
+        {
+            Text = "Перезапустить Проводник",
+            Size = new Size(210, 36),
+            Margin = new Padding(0, 0, 0, 10)
+        };
+        UiTheme.StyleActionButton(_restartExplorerButton);
+        _restartExplorerButton.Click += async (s, e) => await RestartExplorerAsync();
+
+        _explorerStatusLabel = new Label
+        {
+            Text = "Готово к перезапуску Проводника.",
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
+            ForeColor = UiTheme.TextDim,
+            AutoSize = true,
+            MaximumSize = new Size(900, 0),
+            Margin = new Padding(0)
+        };
+
+        var explorerLayout = new FlowLayoutPanel
+        {
+            Location = new Point(explorerPanel.Padding.Left, explorerPanel.Padding.Top),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0),
+            Padding = new Padding(0)
+        };
+        explorerLayout.Controls.Add(explorerTitleLabel);
+        explorerLayout.Controls.Add(explorerDescriptionLabel);
+        explorerLayout.Controls.Add(_restartExplorerButton);
+        explorerLayout.Controls.Add(_explorerStatusLabel);
+        explorerPanel.Controls.Add(explorerLayout);
+
         root.Controls.Add(titleLabel, 0, 0);
         root.Controls.Add(introLabel, 0, 1);
         root.Controls.Add(screenPanel, 0, 2);
+        root.Controls.Add(explorerPanel, 0, 3);
 
         Controls.Add(root);
+
+        UiTheme.EnableDynamicLabelWrap(root, introLabel);
+        UiTheme.EnableDynamicLabelWrap(screenPanel, screenDescriptionLabel, _statusLabel);
+        UiTheme.EnableDynamicLabelWrap(explorerPanel, explorerDescriptionLabel, _explorerStatusLabel);
     }
 
     private async Task TurnOffScreenAsync()
@@ -122,7 +183,10 @@ public sealed class FunctionsTab : UserControl
         try
         {
             await Task.Delay(1000);
-            SendMessage(HwndBroadcast, WmSysCommand, ScMonitorPower, MonitorPowerOff);
+            // A synchronous broadcast waits for every top-level window. One hung application
+            // can therefore freeze the tweaker itself, so this command is posted asynchronously.
+            if (!PostMessage(HwndBroadcast, WmSysCommand, ScMonitorPower, MonitorPowerOff))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             _statusLabel.Text = "Команда отключения экрана отправлена.";
         }
         catch (Exception ex)
@@ -138,6 +202,61 @@ public sealed class FunctionsTab : UserControl
         }
     }
 
+    private async Task RestartExplorerAsync()
+    {
+        if (!_restartExplorerButton.Enabled)
+            return;
+
+        _restartExplorerButton.Enabled = false;
+        _explorerStatusLabel.Text = "Перезапуск Проводника...";
+        _explorerStatusLabel.ForeColor = UiTheme.AccentGreen;
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                foreach (var explorer in Process.GetProcessesByName("explorer"))
+                {
+                    using (explorer)
+                    {
+                        explorer.Kill();
+                        explorer.WaitForExit(5000);
+                    }
+                }
+
+                // Windows с AutoRestartShell=1 сама поднимает оболочку после завершения.
+                // Если запустить explorer поверх уже поднявшейся оболочки, откроется
+                // лишнее окно «Этот компьютер», поэтому сперва ждём авто-перезапуск.
+                var deadline = DateTime.UtcNow.AddSeconds(3);
+                while (DateTime.UtcNow < deadline && Process.GetProcessesByName("explorer").Length == 0)
+                    Thread.Sleep(250);
+
+                if (Process.GetProcessesByName("explorer").Length == 0)
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        UseShellExecute = true
+                    });
+                }
+            });
+
+            _explorerStatusLabel.Text = "Проводник перезапущен. Панель задач и значки обновлены.";
+            _explorerStatusLabel.ForeColor = UiTheme.AccentGreen;
+        }
+        catch (Exception ex)
+        {
+            _logService.Error("Failed to restart Windows Explorer.", ex);
+            _explorerStatusLabel.Text = "Не удалось перезапустить Проводник. Подробности сохранены в журнале.";
+            _explorerStatusLabel.ForeColor = Color.OrangeRed;
+        }
+        finally
+        {
+            _restartExplorerButton.Enabled = true;
+        }
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 }

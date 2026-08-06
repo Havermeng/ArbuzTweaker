@@ -18,6 +18,7 @@ public partial class ScpSlTab : UserControl
         {
             Dock = DockStyle.Fill
         };
+        UiTheme.StyleTabControl(tabControl);
 
         var launchOptionsPage = new TabPage
         {

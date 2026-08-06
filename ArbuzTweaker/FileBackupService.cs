@@ -91,7 +91,14 @@ public sealed class FileBackupService
                 Directory.CreateDirectory(targetDirectory);
 
             if (File.Exists(targetPath))
-                BackupFile(targetPath, $"Restore safety - {entry.Category}");
+            {
+                // Без проверки префикса повторные восстановления плодили категории
+                // «Restore safety - Restore safety - ...» и всё более длинные пути папок.
+                var safetyCategory = entry.Category.StartsWith("Restore safety", StringComparison.Ordinal)
+                    ? entry.Category
+                    : $"Restore safety - {entry.Category}";
+                BackupFile(targetPath, safetyCategory);
+            }
 
             File.Copy(entry.BackupPath, targetPath, true);
             _logService.Info($"Backup restored: {entry.BackupPath} -> {targetPath}");

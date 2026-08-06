@@ -98,6 +98,8 @@ internal sealed class CrosshairOverlayForm : Form
 
         if (IsHandleCreated)
         {
+            // SWP_SHOWWINDOW только для видимого оверлея: иначе любое обновление
+            // настроек показывало скрытое окно в обход WinForms.
             SetWindowPos(
                 Handle,
                 HwndTopMost,
@@ -105,10 +107,9 @@ internal sealed class CrosshairOverlayForm : Form
                 desiredBounds.Y,
                 desiredBounds.Width,
                 desiredBounds.Height,
-                SwpNoActivate | SwpShowWindow);
+                SwpNoActivate | (Visible ? SwpShowWindow : 0));
         }
 
-        TopMost = true;
         _targetScreenBounds = targetScreen;
     }
 
@@ -193,8 +194,17 @@ internal sealed class CrosshairOverlayForm : Form
     private Rectangle ResolveTargetScreenBounds()
     {
         var foregroundWindow = GetForegroundWindow();
-        if (foregroundWindow != IntPtr.Zero && foregroundWindow != Handle)
-            return Screen.FromHandle(foregroundWindow).Bounds;
+        if (foregroundWindow != IntPtr.Zero && (!IsHandleCreated || foregroundWindow != Handle))
+        {
+            GetWindowThreadProcessId(foregroundWindow, out var processId);
+            if (processId != (uint)Environment.ProcessId)
+                return Screen.FromHandle(foregroundWindow).Bounds;
+
+            // Окна самого твикера (настройки, диалоги) не считаются целевыми:
+            // иначе на мультимониторе прицел прыгал за окном настроек.
+            if (!_targetScreenBounds.IsEmpty)
+                return _targetScreenBounds;
+        }
 
         return Screen.FromPoint(Cursor.Position).Bounds;
     }
@@ -241,7 +251,10 @@ internal sealed class CrosshairOverlayForm : Form
         var gap = Math.Max(0, settings.Gap);
         var thickness = Math.Max(1, settings.Thickness);
         var dotSize = Math.Max(2, thickness + 1);
-        var regionThickness = thickness + (settings.ShowOutline ? 5 : 2);
+        // Регион и есть видимая фигура (он целиком заливается в OnPaintBackground),
+        // поэтому его толщина должна совпадать с настройкой; +4 при обводке — кольцо
+        // цвета обводки по 2 пикселя с каждой стороны основной линии.
+        var regionThickness = Math.Max(1, thickness + (settings.ShowOutline ? 4 : 0));
 
         AddShapePath(path, settings.Shape, centerX, centerY, size, gap, dotSize, settings.ShowCenterDot);
 
@@ -550,6 +563,9 @@ internal sealed class CrosshairOverlayForm : Form
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(

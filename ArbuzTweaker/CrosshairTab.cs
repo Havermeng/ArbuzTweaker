@@ -46,6 +46,9 @@ public sealed class CrosshairTab : UserControl
     private bool _suppressCrosshairUpdate;
     private bool _suppressColorDialog;
     private bool _suppressOutlineColorDialog;
+    private bool? _lastCrosshairUiState;
+    private string _lastColorSelectionName = "Белый";
+    private string _lastOutlineColorSelectionName = "Чёрный";
 
     public CrosshairTab()
     {
@@ -105,8 +108,9 @@ public sealed class CrosshairTab : UserControl
             Text = "Экранный оверлей поверх игр и приложений. Он не лезет в процесс игры, не делает инжект и не перехватывает ввод, но перед использованием в онлайн-играх стоит проверить правила конкретной игры.",
             Font = new Font("Segoe UI", 10F, FontStyle.Regular),
             ForeColor = UiTheme.TextMuted,
-            MaximumSize = new Size(760, 0),
+            MaximumSize = new Size(980, 0),
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             Margin = new Padding(0, 0, 0, 10)
         };
 
@@ -117,6 +121,7 @@ public sealed class CrosshairTab : UserControl
             ForeColor = UiTheme.AccentGreen,
             MaximumSize = new Size(980, 0),
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             Margin = new Padding(0, 0, 0, 18)
         };
 
@@ -142,11 +147,11 @@ public sealed class CrosshairTab : UserControl
         _sizeInput = CreateNumericInput(4, 80, 14);
         _gapInput = CreateNumericInput(0, 40, 4);
         _thicknessInput = CreateNumericInput(1, 8, 2);
-        _opacityInput = CreateNumericInput(0, 100, 100);
+        _opacityInput = CreateNumericInput(10, 100, 100);
         _sizeSlider = CreateSlider(4, 80, 14);
         _gapSlider = CreateSlider(0, 40, 4);
         _thicknessSlider = CreateSlider(1, 8, 2);
-        _opacitySlider = CreateSlider(0, 100, 100);
+        _opacitySlider = CreateSlider(10, 100, 100);
         _presetComboBox = CreateComboBox(220);
         _savePresetButton = CreateSmallButton("Сохранить");
         _addPresetButton = CreateSmallButton("Добавить");
@@ -260,19 +265,12 @@ public sealed class CrosshairTab : UserControl
         }
 
         if (IsHandleCreated)
-        {
             BeginInvoke((Action)ShowPreparedLayout);
-        }
-        else
-        {
-            EventHandler? handleCreated = null;
-            handleCreated = (_, _) =>
-            {
-                HandleCreated -= handleCreated;
-                BeginInvoke((Action)ShowPreparedLayout);
-            };
-            HandleCreated += handleCreated;
-        }
+
+        // Подписка не снимается: при пересоздании хэндла (переключение вкладок)
+        // отложенный BeginInvoke отбрасывается вместе со старым окном, и без повторной
+        // подписки вкладка оставалась навсегда пустой.
+        HandleCreated += (_, _) => BeginInvoke((Action)ShowPreparedLayout);
     }
 
     private static NumericUpDown CreateNumericInput(int min, int max, int value)
@@ -337,15 +335,16 @@ public sealed class CrosshairTab : UserControl
         _presetComboBox.Margin = new Padding(0, 0, 0, 8);
         _presetComboBox.Dock = DockStyle.Fill;
 
+        // Высота не фиксируется: при узком окне кнопки переносятся на вторую строку,
+        // и жёсткие 78 пикселей прятали кнопку «Удалить» за нижней границей.
         var layout = new TableLayoutPanel
         {
             BackColor = Color.Transparent,
             ColumnCount = 1,
             RowCount = 2,
-            AutoSize = false,
-            Size = new Size(600, 78),
-            MinimumSize = new Size(600, 78),
-            MaximumSize = new Size(int.MaxValue, 78),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(320, 78),
             Dock = DockStyle.Top,
             Margin = new Padding(0),
             Padding = new Padding(0)
@@ -357,8 +356,8 @@ public sealed class CrosshairTab : UserControl
         var buttonsPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            AutoSize = false,
-            Height = 40,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
             BackColor = Color.Transparent,
@@ -586,12 +585,14 @@ public sealed class CrosshairTab : UserControl
     {
         if (_suppressColorDialog)
         {
+            _lastColorSelectionName = _colorComboBox.SelectedItem?.ToString() ?? _lastColorSelectionName;
             CrosshairSettingChanged(sender, e);
             return;
         }
 
         if (_colorComboBox.SelectedItem?.ToString() != "Свой цвет")
         {
+            _lastColorSelectionName = _colorComboBox.SelectedItem?.ToString() ?? _lastColorSelectionName;
             CrosshairSettingChanged(sender, e);
             return;
         }
@@ -599,11 +600,16 @@ public sealed class CrosshairTab : UserControl
         var color = PromptForHexColor(this, _customColor);
         if (color == null)
         {
-            SelectColor(ResolveSelectedColor().ToArgb());
+            // Отмена диалога возвращает предыдущий выбор, а не «Свой цвет»,
+            // который на этот момент уже стоит в комбобоксе.
+            _suppressColorDialog = true;
+            _colorComboBox.SelectedItem = _lastColorSelectionName;
+            _suppressColorDialog = false;
             return;
         }
 
         _customColor = color.Value;
+        _lastColorSelectionName = "Свой цвет";
         CrosshairSettingChanged(sender, e);
         SetStatusMessage($"Выбран свой цвет #{_customColor.R:X2}{_customColor.G:X2}{_customColor.B:X2}.", UiTheme.AccentGreen);
     }
@@ -612,12 +618,14 @@ public sealed class CrosshairTab : UserControl
     {
         if (_suppressOutlineColorDialog)
         {
+            _lastOutlineColorSelectionName = _outlineColorComboBox.SelectedItem?.ToString() ?? _lastOutlineColorSelectionName;
             CrosshairSettingChanged(sender, e);
             return;
         }
 
         if (_outlineColorComboBox.SelectedItem?.ToString() != "Свой цвет")
         {
+            _lastOutlineColorSelectionName = _outlineColorComboBox.SelectedItem?.ToString() ?? _lastOutlineColorSelectionName;
             CrosshairSettingChanged(sender, e);
             return;
         }
@@ -625,11 +633,14 @@ public sealed class CrosshairTab : UserControl
         var color = PromptForHexColor(this, _customOutlineColor);
         if (color == null)
         {
-            SelectOutlineColor(ResolveSelectedOutlineColor().ToArgb());
+            _suppressOutlineColorDialog = true;
+            _outlineColorComboBox.SelectedItem = _lastOutlineColorSelectionName;
+            _suppressOutlineColorDialog = false;
             return;
         }
 
         _customOutlineColor = color.Value;
+        _lastOutlineColorSelectionName = "Свой цвет";
         CrosshairSettingChanged(sender, e);
         SetStatusMessage($"Выбран цвет обводки #{_customOutlineColor.R:X2}{_customOutlineColor.G:X2}{_customOutlineColor.B:X2}.", UiTheme.AccentGreen);
     }
@@ -893,10 +904,17 @@ public sealed class CrosshairTab : UserControl
 
     private void CheckCrosshairCenter()
     {
+        // Проверка не должна оставлять прицел включённым навсегда:
+        // если он был выключен, после замера возвращаем как было.
+        var wasEnabled = _isCrosshairEnabled;
         if (!_isCrosshairEnabled)
             ShowOrUpdateCrosshair();
 
         var result = _overlayForm?.CheckCenter();
+
+        if (!wasEnabled)
+            HideCrosshair();
+
         if (result == null)
         {
             SetStatusMessage("Не удалось проверить центр прицела.", Color.FromArgb(255, 90, 90));
@@ -956,6 +974,12 @@ public sealed class CrosshairTab : UserControl
 
     private void UpdateCrosshairStateUi()
     {
+        // Перестиль кнопки и перезапись статуса — только при реальной смене состояния,
+        // иначе каждый тик слайдера мигал кнопкой и затирал последнее статус-сообщение.
+        if (_lastCrosshairUiState == _isCrosshairEnabled)
+            return;
+
+        _lastCrosshairUiState = _isCrosshairEnabled;
         _toggleButton.Text = _isCrosshairEnabled ? "Скрыть прицел" : "Включить прицел";
         UiTheme.StyleActionButton(_toggleButton, !_isCrosshairEnabled);
         _statusLabel.Text = _isCrosshairEnabled

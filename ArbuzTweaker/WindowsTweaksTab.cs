@@ -23,6 +23,7 @@ public partial class WindowsTweaksTab : UserControl
     private const string NvidiaOverlayTaskFolderName = "ArbuzTweaker";
     private const string NvidiaOverlayRestartTaskName = "Restart NVIDIA Overlay";
     private const string NvidiaOverlayProcessRestartTaskName = "Restart NVIDIA Overlay for selected apps";
+    private const string GameRealtimePriorityTaskName = "Set Dota 2 and SCP SL to realtime priority";
     private const string NvidiaOverlayExePath = @"C:\Program Files\NVIDIA Corporation\NVIDIA App\CEF\NVIDIA Overlay.exe";
     private const string NvidiaOverlayHelperPath = @"C:\Program Files\NVIDIA Corporation\NVIDIA App\ShadowPlay\nvsphelper64.exe";
     private const int PowerShellQueryTimeoutMilliseconds = 8000;
@@ -44,6 +45,7 @@ public partial class WindowsTweaksTab : UserControl
     private CheckBox _nvidiaOverlayLaunchDotaCheckBox = null!;
     private CheckBox _nvidiaOverlayLaunchScpSlCheckBox = null!;
     private CheckBox _nvidiaOverlayLaunchCustomCheckBox = null!;
+    private CheckBox _gameRealtimePriorityCheckBox = null!;
     private TextBox _nvidiaOverlayCustomProgramTextBox = null!;
     private Panel _gameTweaksPanel = null!;
     private Label _nduStateLabel = null!;
@@ -54,6 +56,7 @@ public partial class WindowsTweaksTab : UserControl
     private Label _mpoStateLabel = null!;
     private Label _nvidiaOverlayStateLabel = null!;
     private Label _nvidiaOverlayPreLaunchStateLabel = null!;
+    private Label _gameRealtimePriorityStateLabel = null!;
     private Label _statusLabel = null!;
     private bool _isSynchronizingUnsafeControls;
     private int _statusMessageVersion;
@@ -81,12 +84,11 @@ public partial class WindowsTweaksTab : UserControl
             true,
             new[]
             {
-                RegistryGameValue.LocalMachine(@"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2, 1),
-                RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows\CurrentVersion\GraphicsDrivers", "HwSchMode", 2, 1)
+                RegistryGameValue.LocalMachine(@"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2, 1)
             }),
         new(
-            "Оптимизация полноэкранных окон",
-            "Включает параметры GameConfigStore для режима Fullscreen Optimizations.",
+            "Классический полноэкранный режим",
+            "Отключает Fullscreen Optimizations через GameConfigStore: игры в полном экране работают в классическом эксклюзивном режиме.",
             true,
             new[]
             {
@@ -124,7 +126,7 @@ public partial class WindowsTweaksTab : UserControl
             true,
             new[]
             {
-                RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\PolicyManager\default\ApplicationManagement\AllowGameDVR", "Value", 0, 1),
+                RegistryGameValue.LocalMachine(@"SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR", 0, 1),
                 RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR", "AllowGameDVR", 0, 1)
             }),
         new(
@@ -179,7 +181,7 @@ public partial class WindowsTweaksTab : UserControl
             "[Экспериментально] Низкая задержка Win32-презентации",
             "Пункт из отчёта Platinum: включает Win32LowLatencyPresentationEnabled для текущего пользователя. Может влиять на задержку в оконном и безрамочном режиме.",
             false,
-            new[] { RegistryGameValue.CurrentUser(@"Software\Microsoft\Windows\CurrentVersion\GameConfigStore", "Win32LowLatencyPresentationEnabled", 1, null) }),
+            new[] { RegistryGameValue.CurrentUser(@"System\GameConfigStore", "Win32LowLatencyPresentationEnabled", 1, null) }),
         new(
             "[Экспериментально] Профиль MMCSS для игр",
             "Пункт из отчёта Platinum: выставляет высокий профиль Tasks\\Games для Multimedia Class Scheduler. Может помочь с приоритетом игр, но эффект зависит от системы.",
@@ -212,10 +214,15 @@ public partial class WindowsTweaksTab : UserControl
             false,
             new[] { RegistryGameValue.CurrentUser(@"Software\Microsoft\Windows\DWM", "MaxQueuedBuffers", 2, null) }),
         new(
-            "Ускорение обработки мыши",
-            "Отключает EnhancedPointerPrecision в разделе класса устройств мыши.",
+            "Отключение ускорения мыши",
+            "Отключает Enhanced Pointer Precision через Control Panel\\Mouse (MouseSpeed и пороги в 0). Применяется после повторного входа в систему.",
             true,
-            new[] { RegistryGameValue.LocalMachine(@"System\CurrentControlSet\Control\Class\{4D36E96F-E325-11CE-BFC1-08002BE10318}", "EnhancedPointerPrecision", 0, 1) }),
+            new[]
+            {
+                RegistryGameValue.CurrentUserString(@"Control Panel\Mouse", "MouseSpeed", "0", "1"),
+                RegistryGameValue.CurrentUserString(@"Control Panel\Mouse", "MouseThreshold1", "0", "6"),
+                RegistryGameValue.CurrentUserString(@"Control Panel\Mouse", "MouseThreshold2", "0", "10")
+            }),
         new(
             "Ускорение работы видеокарты DWM",
             "Ставит EnableHWAcceleration=1 в DWM.",
@@ -268,6 +275,7 @@ public partial class WindowsTweaksTab : UserControl
         {
             Dock = DockStyle.Fill
         };
+        UiTheme.StyleTabControl(tabControl);
 
         var systemPage = new TabPage
         {
@@ -595,7 +603,7 @@ public partial class WindowsTweaksTab : UserControl
 
         _nvidiaOverlayRestartCheckBox = new CheckBox
         {
-            Text = "Перезапускать NVIDIA Overlay при входе в Windows и выходе из сна",
+            Text = "Запускать NVIDIA Overlay при входе в Windows и выходе из сна, если он не запущен",
             Location = new Point(20, 1665),
             AutoSize = true,
             MaximumSize = new Size(WindowsPageContentWidth, 0),
@@ -604,7 +612,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var nvidiaOverlayDescriptionLabel = new Label
         {
-            Text = "Создаёт задачу планировщика Windows, которая аккуратно перезапускает только NVIDIA Overlay.exe. Службы NVIDIA Container не трогаются.",
+            Text = "Создаёт задачу планировщика Windows, которая проверяет NVIDIA Overlay.exe и запускает его только если он не работает. Уже запущенный Overlay и Мгновенный повтор не затрагиваются.",
             Location = new Point(20, 1692),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
@@ -630,7 +638,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var nvidiaOverlayPreLaunchLabel = new Label
         {
-            Text = "Запуск с перезапуском NVIDIA Overlay",
+            Text = "Запуск NVIDIA Overlay для выбранных игр",
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
             Location = new Point(20, 1830),
             AutoSize = true
@@ -638,7 +646,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var nvidiaOverlayPreLaunchDescriptionLabel = new Label
         {
-            Text = "Выберите игры или программу и нажмите Применить. После этого будет автоматически перезапускаться именно внутриигровой NVIDIA Overlay из NVIDIA App при запуске выбранных .exe, без запуска игр из твикера.",
+            Text = "Выберите игры или программу и нажмите Применить. При запуске выбранных .exe твикер проверит NVIDIA Overlay из NVIDIA App и запустит его только если он не работает. Уже запущенный Overlay и Мгновенный повтор не затрагиваются.",
             Location = new Point(20, 1860),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
@@ -678,6 +686,7 @@ public partial class WindowsTweaksTab : UserControl
             Size = new Size(650, 28),
             PlaceholderText = "Путь к .exe своей программы"
         };
+        UiTheme.StyleSearchTextBox(_nvidiaOverlayCustomProgramTextBox);
         _nvidiaOverlayCustomProgramTextBox.TextChanged += (s, e) => SaveNvidiaOverlayPreLaunchSettings();
 
         var browseNvidiaOverlayCustomProgramButton = new Button
@@ -690,7 +699,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var applyNvidiaOverlayPreLaunchButton = new Button
         {
-            Text = "Применить автоперезапуск",
+            Text = "Применить автозапуск",
             Location = new Point(20, 2020),
             Size = new Size(240, 35)
         };
@@ -698,17 +707,69 @@ public partial class WindowsTweaksTab : UserControl
 
         _nvidiaOverlayPreLaunchStateLabel = new Label
         {
-            Text = "Выберите, для каких .exe включить автоматический перезапуск NVIDIA Overlay из NVIDIA App.",
+            Text = "Выберите, для каких .exe проверять и при необходимости запускать NVIDIA Overlay из NVIDIA App.",
             Location = new Point(20, 1992),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
             ForeColor = Color.Gray
         };
 
+        var gamePriorityLabel = new Label
+        {
+            Text = "Приоритет процессов игр",
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            AutoSize = true
+        };
+
+        _gameRealtimePriorityCheckBox = new CheckBox
+        {
+            Text = UnsafeTweaksPrompt.Marker + " Автоматически ставить Dota 2 и SCP:SL в приоритет реального времени",
+            AutoSize = true,
+            MaximumSize = new Size(WindowsPageContentWidth, 0),
+            ForeColor = Color.White
+        };
+
+        var gamePriorityDescriptionLabel = new Label
+        {
+            Text = "Создаёт задачу Планировщика Windows. При запуске найденной игры ей назначается приоритет реального времени до закрытия процесса. Требуются права администратора и аудит запуска процессов Windows. Реальное время может вызвать зависание системы, проблемы со звуком или вводом, поэтому используйте только при понимании риска.",
+            MaximumSize = new Size(WindowsPageContentWidth, 0),
+            AutoSize = true,
+            ForeColor = Color.Gainsboro
+        };
+
+        _gameRealtimePriorityStateLabel = new Label
+        {
+            Text = "Проверка задачи приоритета игр...",
+            MaximumSize = new Size(WindowsPageContentWidth, 0),
+            AutoSize = true,
+            ForeColor = Color.Gray
+        };
+
+        var applyGameRealtimePriorityButton = new Button
+        {
+            Text = "Применить",
+            Size = new Size(120, 35)
+        };
+        applyGameRealtimePriorityButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ApplyGameRealtimePriorityAsync);
+
         RegisterUnsafeCheckBox(_nduCheckBox);
         RegisterUnsafeCheckBox(_dhcpMediaSenseCheckBox);
         RegisterUnsafeCheckBox(_googleDnsCheckBox);
         RegisterUnsafeCheckBox(_disableIpv6CheckBox);
+        RegisterUnsafeCheckBox(_gameRealtimePriorityCheckBox);
+
+        UiTheme.StyleActionButton(applyMpoButton, true);
+        UiTheme.StyleActionButton(applyNduButton, true);
+        UiTheme.StyleActionButton(applyEdgeButton, true);
+        UiTheme.StyleActionButton(repairNetworkButton, true);
+        UiTheme.StyleActionButton(restartAdaptersButton, true);
+        UiTheme.StyleActionButton(applyDhcpMediaSenseButton, true);
+        UiTheme.StyleActionButton(applyGoogleDnsButton, true);
+        UiTheme.StyleActionButton(applyIpv6Button, true);
+        UiTheme.StyleActionButton(applyNvidiaOverlayButton, true);
+        UiTheme.StyleActionButton(browseNvidiaOverlayCustomProgramButton);
+        UiTheme.StyleActionButton(applyNvidiaOverlayPreLaunchButton, true);
+        UiTheme.StyleActionButton(applyGameRealtimePriorityButton, true);
 
         var gameModeLabel = new Label
         {
@@ -727,11 +788,16 @@ public partial class WindowsTweaksTab : UserControl
             ForeColor = Color.Gainsboro
         };
 
+        // Кнопки профилей авторазмерные: фиксированная ширина резала «Профиль: безопасный»
+        // и «Профиль: экспериментальный» до первого слова.
         var safeProfileButton = new Button
         {
             Text = "Профиль: безопасный",
             Location = new Point(20, 95),
-            Size = new Size(190, 35)
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(0, 35),
+            Padding = new Padding(10, 0, 10, 0)
         };
         UiTheme.StyleActionButton(safeProfileButton);
         safeProfileButton.Click += (s, e) => SetSafeGameTweaksChecked();
@@ -740,7 +806,10 @@ public partial class WindowsTweaksTab : UserControl
         {
             Text = "Профиль: игровой",
             Location = new Point(220, 95),
-            Size = new Size(170, 35)
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(0, 35),
+            Padding = new Padding(10, 0, 10, 0)
         };
         UiTheme.StyleActionButton(gameProfileButton);
         gameProfileButton.Click += (s, e) => SetRecommendedGameTweaksChecked();
@@ -749,7 +818,10 @@ public partial class WindowsTweaksTab : UserControl
         {
             Text = "Профиль: экспериментальный",
             Location = new Point(400, 95),
-            Size = new Size(240, 35)
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(0, 35),
+            Padding = new Padding(10, 0, 10, 0)
         };
         UiTheme.StyleActionButton(experimentalProfileButton);
         experimentalProfileButton.Click += (s, e) => SetExperimentalGameTweaksChecked();
@@ -758,7 +830,10 @@ public partial class WindowsTweaksTab : UserControl
         {
             Text = "Применить игровые твики",
             Location = new Point(20, 145),
-            Size = new Size(210, 35)
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(0, 35),
+            Padding = new Padding(10, 0, 10, 0)
         };
         UiTheme.StyleActionButton(applyGameTweaksButton, true);
         applyGameTweaksButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ApplyGameTweaksAsync);
@@ -767,7 +842,10 @@ public partial class WindowsTweaksTab : UserControl
         {
             Text = "Откатить бэкап реестра",
             Location = new Point(240, 145),
-            Size = new Size(230, 35)
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(0, 35),
+            Padding = new Padding(10, 0, 10, 0)
         };
         UiTheme.StyleActionButton(restoreRegistryBackupButton);
         restoreRegistryBackupButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, RestoreRegistryBackupAsync);
@@ -888,8 +966,43 @@ public partial class WindowsTweaksTab : UserControl
         AddSystemControl(nvidiaOverlayLaunchChoicesPanel, 0);
         AddSystemControl(nvidiaOverlayCustomProgramPanel, 8);
         AddSystemControl(_nvidiaOverlayPreLaunchStateLabel, 8);
-        AddSystemControl(applyNvidiaOverlayPreLaunchButton, 0);
+        AddSystemControl(applyNvidiaOverlayPreLaunchButton, 28);
+        AddSystemControl(gamePriorityLabel, 8);
+        AddSystemControl(_gameRealtimePriorityCheckBox, 6);
+        AddSystemControl(gamePriorityDescriptionLabel, 8);
+        AddSystemControl(_gameRealtimePriorityStateLabel, 8);
+        AddSystemControl(applyGameRealtimePriorityButton, 0);
         systemPage.Controls.Add(systemLayout);
+
+        UiTheme.EnableDynamicLabelWrap(
+            systemLayout,
+            infoLabel,
+            mpoDescriptionLabel,
+            nduDescriptionLabel,
+            edgeDescriptionLabel,
+            repairNetworkDescriptionLabel,
+            restartAdaptersDescriptionLabel,
+            dhcpMediaSenseDescriptionLabel,
+            googleDnsDescriptionLabel,
+            ipv6DescriptionLabel,
+            _nvidiaOverlayRestartCheckBox,
+            nvidiaOverlayDescriptionLabel,
+            _nvidiaOverlayStateLabel,
+            nvidiaOverlayPreLaunchDescriptionLabel,
+            _nvidiaOverlayPreLaunchStateLabel,
+            nvidiaOverlayLaunchChoicesPanel,
+            nvidiaOverlayCustomProgramPanel,
+            _gameRealtimePriorityCheckBox,
+            gamePriorityDescriptionLabel,
+            _gameRealtimePriorityStateLabel);
+
+        systemLayout.SizeChanged += (s, e) =>
+        {
+            var availableWidth = Math.Max(360, systemLayout.ClientSize.Width - systemLayout.Padding.Horizontal - 8);
+            _nvidiaOverlayCustomProgramTextBox.Width = Math.Max(
+                220,
+                availableWidth - browseNvidiaOverlayCustomProgramButton.Width - _nvidiaOverlayCustomProgramTextBox.Margin.Horizontal - 8);
+        };
 
         gameModePage.Controls.Add(gameModeLabel);
         gameModePage.Controls.Add(gameModeDescriptionLabel);
@@ -900,7 +1013,54 @@ public partial class WindowsTweaksTab : UserControl
         gameModePage.Controls.Add(restoreRegistryBackupButton);
         gameModePage.Controls.Add(_gameTweaksPanel);
 
-        gameModePage.AutoScrollMinSize = new Size(0, _gameTweaksPanel.Bottom + 24);
+        // Описание с AutoSize растёт по высоте (особенно на узком окне и при увеличенном DPI)
+        // и раньше налезало на кнопки профилей — ряды ниже позиционируются от его низа,
+        // а список твиков подгоняется под реальную ширину страницы.
+        void LayoutGameModePage()
+        {
+            var profileButtonsTop = gameModeDescriptionLabel.Bottom + 14;
+            safeProfileButton.Top = profileButtonsTop;
+            gameProfileButton.Top = profileButtonsTop;
+            gameProfileButton.Left = safeProfileButton.Right + 10;
+
+            // На узком окне третья кнопка не влезает в ряд — переносится на следующий.
+            var availablePageWidth = Math.Max(360, gameModePage.ClientSize.Width - 24);
+            if (gameProfileButton.Right + 10 + experimentalProfileButton.Width <= availablePageWidth)
+            {
+                experimentalProfileButton.Top = profileButtonsTop;
+                experimentalProfileButton.Left = gameProfileButton.Right + 10;
+            }
+            else
+            {
+                experimentalProfileButton.Top = profileButtonsTop + safeProfileButton.Height + 8;
+                experimentalProfileButton.Left = 20;
+            }
+
+            var actionButtonsTop = experimentalProfileButton.Bottom + 15;
+            applyGameTweaksButton.Top = actionButtonsTop;
+            restoreRegistryBackupButton.Top = actionButtonsTop;
+            restoreRegistryBackupButton.Left = applyGameTweaksButton.Right + 10;
+
+            var tweaksPanelWidth = Math.Max(560, gameModePage.ClientSize.Width - 44);
+            if (_gameTweaksPanel.Width != tweaksPanelWidth)
+            {
+                _gameTweaksPanel.Width = tweaksPanelWidth;
+                PopulateGameTweaksPanel();
+            }
+
+            _gameTweaksPanel.Top = actionButtonsTop + applyGameTweaksButton.Height + 20;
+            gameModePage.AutoScrollMinSize = new Size(0, _gameTweaksPanel.Bottom + 24);
+        }
+
+        gameModeDescriptionLabel.SizeChanged += (s, e) => LayoutGameModePage();
+        gameModePage.SizeChanged += (s, e) =>
+        {
+            gameModeDescriptionLabel.MaximumSize = new Size(
+                Math.Max(360, gameModePage.ClientSize.Width - 60),
+                0);
+            LayoutGameModePage();
+        };
+        LayoutGameModePage();
 
         tabControl.TabPages.Add(systemPage);
         tabControl.TabPages.Add(gameModePage);
@@ -926,10 +1086,13 @@ public partial class WindowsTweaksTab : UserControl
             _ipv6StateLabel.ForeColor = Color.Gray;
             _nvidiaOverlayStateLabel.Text = "Проверка задачи NVIDIA Overlay...";
             _nvidiaOverlayStateLabel.ForeColor = Color.Gray;
+            _gameRealtimePriorityStateLabel.Text = "Проверка задачи приоритета игр...";
+            _gameRealtimePriorityStateLabel.ForeColor = Color.Gray;
 
             await Task.WhenAll(
                 LoadIpv6StateAsync(),
-                LoadNvidiaOverlayRestartStateAsync());
+                LoadNvidiaOverlayRestartStateAsync(),
+                LoadGameRealtimePriorityStateAsync());
         }
         finally
         {
@@ -1166,6 +1329,39 @@ public partial class WindowsTweaksTab : UserControl
         }
     }
 
+    private async Task LoadGameRealtimePriorityStateAsync()
+    {
+        try
+        {
+            var output = await RunPowerShellQueryAsync(
+                $@"$ErrorActionPreference = 'Stop'; $service = New-Object -ComObject 'Schedule.Service'; $service.Connect(); try {{ $folder = $service.GetFolder('\{NvidiaOverlayTaskFolderName}'); $task = $folder.GetTask('{GameRealtimePriorityTaskName}'); if($task.Enabled){{ 'ENABLED' }} else {{ 'DISABLED' }} }} catch {{ 'MISSING' }}");
+
+            if (IsDisposed || Disposing)
+                return;
+
+            var state = output.Trim();
+            if (string.Equals(state, "ENABLED", StringComparison.OrdinalIgnoreCase))
+            {
+                _gameRealtimePriorityCheckBox.Checked = true;
+                _gameRealtimePriorityStateLabel.Text = "Автоматическое назначение приоритета реального времени включено.";
+                _gameRealtimePriorityStateLabel.ForeColor = Color.Orange;
+                return;
+            }
+
+            _gameRealtimePriorityCheckBox.Checked = false;
+            _gameRealtimePriorityStateLabel.Text = string.Equals(state, "DISABLED", StringComparison.OrdinalIgnoreCase)
+                ? "Задача приоритета игр существует, но отключена."
+                : "Автоматическое назначение приоритета реального времени не настроено.";
+            _gameRealtimePriorityStateLabel.ForeColor = Color.Gray;
+        }
+        catch
+        {
+            _gameRealtimePriorityCheckBox.Checked = false;
+            _gameRealtimePriorityStateLabel.Text = "Не удалось определить состояние задачи приоритета игр.";
+            _gameRealtimePriorityStateLabel.ForeColor = Color.Orange;
+        }
+    }
+
     private void LoadNvidiaOverlayPreLaunchSettings()
     {
         var settings = _appSettingsService.Load();
@@ -1200,7 +1396,7 @@ public partial class WindowsTweaksTab : UserControl
             return;
         }
 
-        _nvidiaOverlayPreLaunchStateLabel.Text = "NVIDIA Overlay будет автоперезапускаться для: " + string.Join(", ", names);
+        _nvidiaOverlayPreLaunchStateLabel.Text = "NVIDIA Overlay будет проверяться для: " + string.Join(", ", names);
         _nvidiaOverlayPreLaunchStateLabel.ForeColor = Color.Gainsboro;
     }
 
@@ -1261,15 +1457,21 @@ public partial class WindowsTweaksTab : UserControl
         return text.Replace(UnsafeTweaksPrompt.Marker, string.Empty, StringComparison.Ordinal).Trim();
     }
 
+    private static readonly Font GameTweakDescriptionFont = new("Segoe UI", 9.5F);
+
     private void PopulateGameTweaksPanel()
     {
+        // Пересборка сохраняет отмеченные пользователем, но ещё не применённые галочки.
+        var previousStates = _gameTweakCheckBoxes.ToDictionary(pair => pair.Key, pair => pair.Value.Checked);
+        var hadPreviousStates = _gameTweakCheckBoxes.Count > 0;
+
         _gameTweakCheckBoxes.Clear();
-        _gameTweaksPanel.Controls.Clear();
+        UiTheme.ClearAndDisposeControls(_gameTweaksPanel);
 
         var y = 0;
         var rowWidth = Math.Max(520, _gameTweaksPanel.ClientSize.Width - 8);
         var descriptionWidth = Math.Max(260, rowWidth - 44);
-        var descriptionFont = new Font("Segoe UI", 9.5F);
+        var descriptionFont = GameTweakDescriptionFont;
         foreach (var tweak in GameTweaks)
         {
             var requiresAdmin = tweak.Values.Any(value => value.Root == RegistryRoot.LocalMachine);
@@ -1300,7 +1502,8 @@ public partial class WindowsTweaksTab : UserControl
                 AutoSize = false,
                 UseMnemonic = false,
                 ForeColor = Color.White,
-                BackColor = Color.Transparent
+                BackColor = Color.Transparent,
+                Checked = hadPreviousStates && previousStates.TryGetValue(tweak, out var wasChecked) && wasChecked
             };
 
             var descriptionLabel = new Label
@@ -1433,29 +1636,32 @@ public partial class WindowsTweaksTab : UserControl
             return;
         }
 
-        var applied = 0;
-        var failed = 0;
-
-        foreach (var (tweak, checkBox) in _gameTweakCheckBoxes)
+        // Применяются только изменённые твики: раньше цикл шёл по всем чекбоксам и
+        // каждое нажатие «Применить» молча перезаписывало ~50 значений реестра,
+        // включая выключение HAGS и возврат Game DVR у нетронутых пунктов.
+        var (applied, failed) = await Task.Run(() =>
         {
-            try
+            var appliedCount = 0;
+            var failedCount = 0;
+
+            foreach (var change in plannedChanges)
             {
-                ApplyGameTweak(tweak, checkBox.Checked);
-                applied++;
+                try
+                {
+                    ApplyGameTweak(change.Tweak, change.Enable);
+                    appliedCount++;
+                }
+                catch
+                {
+                    failedCount++;
+                }
             }
-            catch (UnauthorizedAccessException)
-            {
-                failed++;
-            }
-            catch
-            {
-                failed++;
-            }
-        }
+
+            return (appliedCount, failedCount);
+        });
 
         LoadGameTweaksState();
         ShowStatus(failed == 0 ? $"Игровые твики применены: {applied}" : $"Применено: {applied}, ошибок: {failed}", failed == 0 ? Color.Green : Color.Orange);
-        await Task.CompletedTask;
     }
 
     private void ApplyGameTweak(RegistryGameTweak tweak, bool enabled)
@@ -1847,8 +2053,8 @@ public partial class WindowsTweaksTab : UserControl
             "Start-Sleep -Seconds 3",
             "$overlayPath = " + QuotePowerShellString(NvidiaOverlayExePath),
             "$helperPath = " + QuotePowerShellString(NvidiaOverlayHelperPath),
-            "Get-Process -Name 'NVIDIA Overlay' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue",
-            "Start-Sleep -Milliseconds 800",
+            "$existingOverlay = Get-Process -Name 'NVIDIA Overlay' -ErrorAction SilentlyContinue",
+            "if ($null -ne $existingOverlay) { exit 0 }",
             "if (Test-Path -LiteralPath $overlayPath) {",
             "    Start-Process -FilePath $overlayPath -WindowStyle Hidden",
             "    exit 0",
@@ -1874,7 +2080,7 @@ public partial class WindowsTweaksTab : UserControl
             @"try { $taskFolder = $service.GetFolder('\' + $taskFolderName) } catch { $taskFolder = $rootFolder.CreateFolder($taskFolderName) }",
             "$definition = $service.NewTask(0)",
             "$definition.RegistrationInfo.Author = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name",
-            "$definition.RegistrationInfo.Description = 'Перезапускает NVIDIA Overlay при входе в Windows и после выхода из сна.'",
+            "$definition.RegistrationInfo.Description = 'Проверяет NVIDIA Overlay при входе в Windows и после выхода из сна; запускает только если он не работает.'",
             "$definition.Principal.UserId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name",
             "$definition.Principal.LogonType = 3",
             "$definition.Principal.RunLevel = 0",
@@ -1938,15 +2144,15 @@ public partial class WindowsTweaksTab : UserControl
         var selectedNames = GetSelectedNvidiaOverlayPreLaunchNames();
         if (selectedNames.Count == 0)
         {
-            ShowStatus("Удаляется автоперезапуск Overlay для программ...", Color.Gray);
+            ShowStatus("Удаляется автозапуск Overlay для программ...", Color.Gray);
             var removeResult = await RunElevatedPowerShellAsync(BuildNvidiaOverlayProcessRemoveTaskScript());
             if (removeResult == ElevatedCommandResult.Success)
             {
-                ShowStatus("Автоперезапуск Overlay для программ отключён", Color.Green);
+                ShowStatus("Автозапуск Overlay для программ отключён", Color.Green);
                 return;
             }
 
-            ShowStatus(removeResult == ElevatedCommandResult.Cancelled ? "Операция отменена" : "Не удалось отключить автоперезапуск Overlay", Color.Orange);
+            ShowStatus(removeResult == ElevatedCommandResult.Cancelled ? "Операция отменена" : "Не удалось отключить автозапуск Overlay", Color.Orange);
             return;
         }
 
@@ -1958,14 +2164,14 @@ public partial class WindowsTweaksTab : UserControl
                 "NVIDIA Overlay",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
-            ShowStatus("Не удалось подготовить автоперезапуск Overlay", Color.Orange);
+            ShowStatus("Не удалось подготовить автозапуск Overlay", Color.Orange);
             return;
         }
 
         if (!IsNvidiaOverlayAvailable())
         {
             var dialogResult = MessageBox.Show(
-                "NVIDIA App не найдена по стандартным путям. Создать задачу автоперезапуска всё равно?",
+                "NVIDIA App не найдена по стандартным путям. Создать задачу автозапуска всё равно?",
                 "NVIDIA Overlay",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
@@ -1974,17 +2180,93 @@ public partial class WindowsTweaksTab : UserControl
                 return;
         }
 
-        ShowStatus("Создаётся автоперезапуск Overlay для выбранных программ...", Color.Gray);
+        ShowStatus("Создаётся автозапуск Overlay для выбранных программ...", Color.Gray);
         var commandResult = await RunElevatedPowerShellAsync(BuildNvidiaOverlayProcessRegisterTaskScript(resolveResult.Targets));
 
         if (commandResult == ElevatedCommandResult.Success)
         {
             UpdateNvidiaOverlayPreLaunchState();
-            ShowStatus("Автоперезапуск Overlay для выбранных программ включён", Color.Green);
+            ShowStatus("Автозапуск Overlay для выбранных программ включён", Color.Green);
             return;
         }
 
-        ShowStatus(commandResult == ElevatedCommandResult.Cancelled ? "Операция отменена" : "Не удалось включить автоперезапуск Overlay", Color.Orange);
+        ShowStatus(commandResult == ElevatedCommandResult.Cancelled ? "Операция отменена" : "Не удалось включить автозапуск Overlay", Color.Orange);
+    }
+
+    private async Task ApplyGameRealtimePriorityAsync()
+    {
+        if (_gameRealtimePriorityCheckBox.Checked)
+        {
+            if (IsSafeModeBlocked("автоматическое назначение приоритета реального времени играм"))
+            {
+                await LoadGameRealtimePriorityStateAsync();
+                return;
+            }
+
+            var confirmation = MessageBox.Show(
+                "Dota 2 и SCP:SL будут получать приоритет реального времени при запуске. Такой приоритет может отнять ресурсы у Windows, драйверов, звука и ввода, из-за чего система может зависнуть или стать неотзывчивой.\n\nПродолжить?",
+                "Приоритет реального времени",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            if (confirmation != DialogResult.Yes)
+            {
+                await LoadGameRealtimePriorityStateAsync();
+                return;
+            }
+
+            var targets = await ResolveGameRealtimePriorityTargetsAsync();
+            if (targets.Count == 0)
+            {
+                MessageBox.Show(
+                    "Не удалось найти Dota 2 или SCP:SL. Установите хотя бы одну из игр через Steam и повторите попытку.",
+                    "Приоритет реального времени",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                await LoadGameRealtimePriorityStateAsync();
+                return;
+            }
+
+            ShowStatus("Создаётся задача приоритета реального времени...", Color.Gray);
+            var registerResult = await RunElevatedPowerShellAsync(BuildGameRealtimePriorityRegisterTaskScript(targets));
+            await LoadGameRealtimePriorityStateAsync();
+            ShowStatus(
+                registerResult == ElevatedCommandResult.Success
+                    ? "Автоматический приоритет реального времени включён"
+                    : registerResult == ElevatedCommandResult.Cancelled
+                        ? "Операция отменена"
+                        : "Не удалось создать задачу приоритета игр",
+                registerResult == ElevatedCommandResult.Success ? Color.Green : Color.Orange);
+            return;
+        }
+
+        ShowStatus("Удаляется задача приоритета игр...", Color.Gray);
+        var removeResult = await RunElevatedPowerShellAsync(BuildGameRealtimePriorityRemoveTaskScript());
+        await LoadGameRealtimePriorityStateAsync();
+        ShowStatus(
+            removeResult == ElevatedCommandResult.Success
+                ? "Автоматический приоритет реального времени отключён"
+                : removeResult == ElevatedCommandResult.Cancelled
+                    ? "Операция отменена"
+                    : "Не удалось удалить задачу приоритета игр",
+            removeResult == ElevatedCommandResult.Success ? Color.Green : Color.Orange);
+    }
+
+    private async Task<IReadOnlyList<GameProcessTarget>> ResolveGameRealtimePriorityTargetsAsync()
+    {
+        var targets = new List<GameProcessTarget>();
+
+        var dotaExePath = await GetDota2ExecutablePathAsync();
+        if (!string.IsNullOrWhiteSpace(dotaExePath))
+            targets.Add(new GameProcessTarget("Dota 2", dotaExePath));
+
+        var scpSlExePath = await GetScpSlExecutablePathAsync();
+        if (!string.IsNullOrWhiteSpace(scpSlExePath))
+            targets.Add(new GameProcessTarget("SCP:SL", scpSlExePath));
+
+        return targets
+            .GroupBy(target => target.ProcessPath, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
     }
 
     private async Task<NvidiaOverlayProcessTargetsResolveResult> ResolveNvidiaOverlayProcessTargetsAsync()
@@ -2072,8 +2354,8 @@ public partial class WindowsTweaksTab : UserControl
             "Set-Content -LiteralPath $stampPath -Value ([DateTime]::Now.ToString('O')) -Force",
             "$overlayPath = " + QuotePowerShellString(NvidiaOverlayExePath),
             "$helperPath = " + QuotePowerShellString(NvidiaOverlayHelperPath),
-            "Get-Process -Name 'NVIDIA Overlay' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue",
-            "Start-Sleep -Milliseconds 800",
+            "$existingOverlay = Get-Process -Name 'NVIDIA Overlay' -ErrorAction SilentlyContinue",
+            "if ($null -ne $existingOverlay) { exit 0 }",
             "if (Test-Path -LiteralPath $overlayPath) {",
             "    Start-Process -FilePath $overlayPath -WindowStyle Hidden",
             "    exit 0",
@@ -2097,13 +2379,14 @@ public partial class WindowsTweaksTab : UserControl
             "$auditPolPath = Join-Path $env:SystemRoot 'System32\\auditpol.exe'",
             "& $auditPolPath /set '/subcategory:{0CCE922B-69AE-11D9-BED3-505054503030}' /success:enable | Out-Null",
             "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+            BuildProcessAuditStampSnippet(),
             "$service = New-Object -ComObject 'Schedule.Service'",
             "$service.Connect()",
             @"$rootFolder = $service.GetFolder('\')",
             @"try { $taskFolder = $service.GetFolder('\' + $taskFolderName) } catch { $taskFolder = $rootFolder.CreateFolder($taskFolderName) }",
             "$definition = $service.NewTask(0)",
             "$definition.RegistrationInfo.Author = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name",
-            "$definition.RegistrationInfo.Description = 'Перезапускает NVIDIA Overlay при запуске выбранных игр или программ.'",
+            "$definition.RegistrationInfo.Description = 'Проверяет NVIDIA Overlay при запуске выбранных игр или программ; запускает только если он не работает.'",
             "$definition.Principal.UserId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name",
             "$definition.Principal.LogonType = 3",
             "$definition.Principal.RunLevel = 0",
@@ -2134,6 +2417,7 @@ public partial class WindowsTweaksTab : UserControl
             "$ErrorActionPreference = 'SilentlyContinue'",
             "$taskFolderName = " + QuotePowerShellString(NvidiaOverlayTaskFolderName),
             "$taskName = " + QuotePowerShellString(NvidiaOverlayProcessRestartTaskName),
+            "$otherAuditTaskName = " + QuotePowerShellString(GameRealtimePriorityTaskName),
             "$restartScriptPath = " + QuotePowerShellString(GetNvidiaOverlayProcessRestartScriptPath()),
             "$service = New-Object -ComObject 'Schedule.Service'",
             "$service.Connect()",
@@ -2141,15 +2425,156 @@ public partial class WindowsTweaksTab : UserControl
             @"$taskFolder = $service.GetFolder('\' + $taskFolderName)",
             "$taskFolder.DeleteTask($taskName, 0)",
             "Remove-Item -LiteralPath $restartScriptPath -Force",
+            BuildDisableProcessAuditIfUnusedSnippet(),
             "$rootFolder.DeleteFolder($taskFolderName, 0)",
             "exit 0"
         });
     }
 
+    private static string BuildGameRealtimePriorityRegisterTaskScript(IReadOnlyList<GameProcessTarget> targets)
+    {
+        var scriptPath = GetGameRealtimePriorityScriptPath();
+        var targetPaths = string.Join(", ", targets.Select(target => QuotePowerShellString(target.ProcessPath)));
+        var priorityScript = string.Join(Environment.NewLine, new[]
+        {
+            "$ErrorActionPreference = 'SilentlyContinue'",
+            "$targetPaths = @( " + targetPaths + " )",
+            "for ($attempt = 0; $attempt -lt 10; $attempt++) {",
+            "    $matchedProcess = $false",
+            "    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $targetPaths -contains $_.ExecutablePath } | ForEach-Object {",
+            "        try {",
+            "            $process = Get-Process -Id ([int]$_.ProcessId) -ErrorAction Stop",
+            "            $process.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::RealTime",
+            "            $matchedProcess = $true",
+            "        } catch { }",
+            "    }",
+            "    if ($matchedProcess) { exit 0 }",
+            "    Start-Sleep -Milliseconds 500",
+            "}",
+            "exit 1"
+        });
+        var subscription = BuildProcessCreationEventSubscription(targets.Select(target => target.ProcessPath));
+
+        return string.Join(Environment.NewLine, new[]
+        {
+            "$ErrorActionPreference = 'Stop'",
+            "$taskFolderName = " + QuotePowerShellString(NvidiaOverlayTaskFolderName),
+            "$taskName = " + QuotePowerShellString(GameRealtimePriorityTaskName),
+            "$priorityScriptPath = " + QuotePowerShellString(scriptPath),
+            "New-Item -ItemType Directory -Path ([System.IO.Path]::GetDirectoryName($priorityScriptPath)) -Force | Out-Null",
+            "Set-Content -LiteralPath $priorityScriptPath -Encoding UTF8 -Force -Value @'",
+            priorityScript,
+            "'@",
+            "$auditPolPath = Join-Path $env:SystemRoot 'System32\\auditpol.exe'",
+            "& $auditPolPath /set '/subcategory:{0CCE922B-69AE-11D9-BED3-505054503030}' /success:enable | Out-Null",
+            "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+            BuildProcessAuditStampSnippet(),
+            "$service = New-Object -ComObject 'Schedule.Service'",
+            "$service.Connect()",
+            @"$rootFolder = $service.GetFolder('\')",
+            @"try { $taskFolder = $service.GetFolder('\' + $taskFolderName) } catch { $taskFolder = $rootFolder.CreateFolder($taskFolderName) }",
+            "$definition = $service.NewTask(0)",
+            "$definition.RegistrationInfo.Author = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name",
+            "$definition.RegistrationInfo.Description = 'Назначает приоритет реального времени Dota 2 и SCP:SL при их запуске.'",
+            "$definition.Principal.UserId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name",
+            "$definition.Principal.LogonType = 3",
+            "$definition.Principal.RunLevel = 1",
+            "$definition.Settings.Enabled = $true",
+            "$definition.Settings.Hidden = $true",
+            "$definition.Settings.AllowDemandStart = $true",
+            "$definition.Settings.StartWhenAvailable = $true",
+            "$definition.Settings.DisallowStartIfOnBatteries = $false",
+            "$definition.Settings.StopIfGoingOnBatteries = $false",
+            "$definition.Settings.MultipleInstances = 2",
+            "$definition.Settings.ExecutionTimeLimit = 'PT2M'",
+            "$eventTrigger = $definition.Triggers.Create(0)",
+            "$eventTrigger.Enabled = $true",
+            "$eventTrigger.Subscription = " + QuotePowerShellString(subscription),
+            "$action = $definition.Actions.Create(0)",
+            "$action.Path = 'powershell.exe'",
+            "$action.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' + $priorityScriptPath + '\"'",
+            "$action.WorkingDirectory = [System.IO.Path]::GetDirectoryName($priorityScriptPath)",
+            "$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name",
+            "$taskFolder.RegisterTaskDefinition($taskName, $definition, 6, $currentUser, $null, 3) | Out-Null"
+        });
+    }
+
+    private static string BuildGameRealtimePriorityRemoveTaskScript()
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "$ErrorActionPreference = 'SilentlyContinue'",
+            "$taskFolderName = " + QuotePowerShellString(NvidiaOverlayTaskFolderName),
+            "$taskName = " + QuotePowerShellString(GameRealtimePriorityTaskName),
+            "$otherAuditTaskName = " + QuotePowerShellString(NvidiaOverlayProcessRestartTaskName),
+            "$priorityScriptPath = " + QuotePowerShellString(GetGameRealtimePriorityScriptPath()),
+            "$service = New-Object -ComObject 'Schedule.Service'",
+            "$service.Connect()",
+            @"try { $taskFolder = $service.GetFolder('\' + $taskFolderName); $taskFolder.DeleteTask($taskName, 0) } catch { }",
+            "Remove-Item -LiteralPath $priorityScriptPath -Force",
+            BuildDisableProcessAuditIfUnusedSnippet(),
+            "exit 0"
+        });
+    }
+
+    // Аудит создания процессов (событие 4688) — глобальная политика. Выключаем его,
+    // только если его включал сам твикер и ни одна из двух задач на 4688 больше не существует.
+    private static string BuildDisableProcessAuditIfUnusedSnippet()
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "$auditStampPath = Join-Path $env:LOCALAPPDATA 'ArbuzTweaker\\ProcessAuditEnabledByArbuz.stamp'",
+            "$otherTaskExists = $false",
+            @"try { $checkFolder = $service.GetFolder('\' + $taskFolderName); $null = $checkFolder.GetTask($otherAuditTaskName); $otherTaskExists = $true } catch { }",
+            "if (-not $otherTaskExists -and (Test-Path -LiteralPath $auditStampPath)) {",
+            "    $auditPolPath = Join-Path $env:SystemRoot 'System32\\auditpol.exe'",
+            "    & $auditPolPath /set '/subcategory:{0CCE922B-69AE-11D9-BED3-505054503030}' /success:disable | Out-Null",
+            "    Remove-Item -LiteralPath $auditStampPath -Force",
+            "}"
+        });
+    }
+
+    private static string BuildProcessAuditStampSnippet()
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "$auditStampDir = Join-Path $env:LOCALAPPDATA 'ArbuzTweaker'",
+            "New-Item -ItemType Directory -Path $auditStampDir -Force | Out-Null",
+            "Set-Content -LiteralPath (Join-Path $auditStampDir 'ProcessAuditEnabledByArbuz.stamp') -Value ([DateTime]::Now.ToString('O')) -Force"
+        });
+    }
+
     private static string BuildProcessCreationEventSubscription(IEnumerable<string> processPaths)
     {
-        var conditions = string.Join(" or ", processPaths.Select(path => "Data[@Name='NewProcessName']=" + QuoteEventXPathString(path)));
+        // Сравнение строк в XPath фильтра событий регистрозависимо, а путь из реестра Steam
+        // приходит в нижнем регистре — событие 4688 пишет NewProcessName в реальном регистре
+        // диска, и фильтр никогда не срабатывал. Регистр восстанавливается по файловой системе.
+        var conditions = string.Join(" or ", processPaths.Select(path => "Data[@Name='NewProcessName']=" + QuoteEventXPathString(GetExactPathCasing(path))));
         return "<QueryList><Query Id=\"0\" Path=\"Security\"><Select Path=\"Security\">*[System[Provider[@Name='Microsoft-Windows-Security-Auditing'] and EventID=4688]] and *[EventData[" + conditions + "]]</Select></Query></QueryList>";
+    }
+
+    private static string GetExactPathCasing(string path)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var root = Path.GetPathRoot(fullPath);
+            if (string.IsNullOrEmpty(root))
+                return path;
+
+            var current = root.ToUpperInvariant();
+            foreach (var segment in fullPath[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var matches = Directory.GetFileSystemEntries(current, segment);
+                current = matches.Length == 1 ? matches[0] : Path.Combine(current, segment);
+            }
+
+            return current;
+        }
+        catch
+        {
+            return path;
+        }
     }
 
     private static string QuoteEventXPathString(string value)
@@ -2167,6 +2592,11 @@ public partial class WindowsTweaksTab : UserControl
     private static string GetNvidiaOverlayProcessRestartScriptPath()
     {
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ArbuzTweaker", "RestartNvidiaOverlayOnProcessStart.ps1");
+    }
+
+    private static string GetGameRealtimePriorityScriptPath()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ArbuzTweaker", "SetGameRealtimePriority.ps1");
     }
 
     private static bool ConfirmNetworkOperation(string details)
@@ -2260,9 +2690,13 @@ public partial class WindowsTweaksTab : UserControl
 
                 return process.ExitCode == 0 ? ElevatedCommandResult.Success : ElevatedCommandResult.Failure;
             }
-            catch (Win32Exception)
+            catch (Win32Exception exception)
             {
-                return ElevatedCommandResult.Cancelled;
+                // 1223 = ERROR_CANCELLED: пользователь отклонил запрос UAC.
+                // Остальные Win32-ошибки (файл не найден, доступ запрещён) — это сбой, не отмена.
+                return exception.NativeErrorCode == 1223
+                    ? ElevatedCommandResult.Cancelled
+                    : ElevatedCommandResult.Failure;
             }
             catch
             {
@@ -2330,8 +2764,8 @@ public partial class WindowsTweaksTab : UserControl
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
         _statusLabel.Visible = true;
-        await Task.Delay(2500);
-        if (messageVersion != _statusMessageVersion)
+        await Task.Delay(4000);
+        if (IsDisposed || Disposing || messageVersion != _statusMessageVersion)
             return;
 
         _statusLabel.Text = string.Empty;
@@ -2389,6 +2823,8 @@ public partial class WindowsTweaksTab : UserControl
     }
 
     private sealed record NvidiaOverlayProcessTarget(string Name, string ProcessPath);
+
+    private sealed record GameProcessTarget(string Name, string ProcessPath);
 
     private sealed record NvidiaOverlayProcessTargetsResolveResult(
         IReadOnlyList<NvidiaOverlayProcessTarget> Targets,

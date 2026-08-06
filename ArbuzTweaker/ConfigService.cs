@@ -48,7 +48,9 @@ public class ConfigService
         {
             Directory.CreateDirectory(_configsPath);
             var path = Path.Combine(_configsPath, configName);
-            await File.WriteAllTextAsync(path, content);
+            var tempPath = path + ".tmp";
+            await File.WriteAllTextAsync(tempPath, content);
+            File.Move(tempPath, path, true);
         }
         catch
         {

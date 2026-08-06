@@ -10,6 +10,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
     private Label _pathLabel = null!;
     private Label _statusLabel = null!;
     private int _lastSearchStart;
+    private int _statusToken;
 
     public ScpSlCommandBindingsTab(ScpSlService scpSlService)
     {
@@ -29,7 +30,9 @@ public partial class ScpSlCommandBindingsTab : UserControl
         var content = await _scpSlService.LoadCommandBindingsAsync();
         if (content != null)
         {
-            _bindingsTextBox.Text = NormalizeLineEndings(content);
+            // Не затираем ввод, если пользователь уже начал печатать до конца загрузки.
+            if (!_bindingsTextBox.Modified)
+                _bindingsTextBox.Text = NormalizeLineEndings(content);
             return;
         }
 
@@ -79,6 +82,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
         {
             Text = "Эта вкладка редактирует пользовательский файл биндов SCP:SL. Она не отправляет команды в игру и не автоматизирует игровой процесс.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 12)
@@ -103,6 +107,9 @@ public partial class ScpSlCommandBindingsTab : UserControl
             ScrollBars = ScrollBars.Both,
             WordWrap = false,
             MinimumSize = new Size(0, 80),
+            // По умолчанию TextBox молча обрезает текст до 32767 символов —
+            // большой cmdbinding.txt терял хвост биндов при открытии и сохранении.
+            MaxLength = int.MaxValue,
             Margin = new Padding(0, 0, 0, 12)
         };
         UiTheme.StyleEditorTextBox(_bindingsTextBox);
@@ -258,7 +265,8 @@ public partial class ScpSlCommandBindingsTab : UserControl
         var content = NormalizeLineEndings(_bindingsTextBox.Text);
         if (await _scpSlService.SaveCommandBindingsAsync(content))
         {
-            _bindingsTextBox.Text = content;
+            // Текст не переприсваивается: это сбрасывало каретку в начало и стирало буфер отмены.
+            _bindingsTextBox.Modified = false;
             var path = _scpSlService.GetCommandBindingsPath();
             _pathLabel.Text = $"cmdbinding.txt: {path}";
             _pathLabel.ForeColor = Color.Green;
@@ -310,7 +318,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
             "Как добавлять бинды в файл:\n" +
             "1. Каждый бинд пишется с новой строки.\n" +
             "2. Формат строки: КОД_КЛАВИШИ:КОМАНДА\n" +
-            "3. Код клавиши можно посмотреть через кнопку \"Список клавиш\".\n\n" +
+            "3. Код клавиши можно посмотреть через кнопку \"Клавиши\".\n\n" +
             "Пример:\n" +
             "104:emotion happy\n\n" +
             "Удаление бинда:\n" +
@@ -320,7 +328,7 @@ public partial class ScpSlCommandBindingsTab : UserControl
             MessageBoxIcon.Information);
     }
 
-    private static void ShowKeyCodesDialog()
+    private void ShowKeyCodesDialog()
     {
         using var dialog = new Form
         {
@@ -353,11 +361,12 @@ public partial class ScpSlCommandBindingsTab : UserControl
             Dock = DockStyle.Bottom,
             Height = 38
         };
+        UiTheme.StyleActionButton(closeButton);
         closeButton.Click += (s, e) => dialog.Close();
 
         dialog.Controls.Add(textBox);
         dialog.Controls.Add(closeButton);
-        dialog.ShowDialog();
+        dialog.ShowDialog(FindForm());
     }
 
     private static string NormalizeLineEndings(string text)
@@ -367,10 +376,12 @@ public partial class ScpSlCommandBindingsTab : UserControl
 
     private async void ShowStatus(string message, Color color)
     {
+        var token = ++_statusToken;
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
-        await Task.Delay(2500);
-        _statusLabel.Text = string.Empty;
+        await Task.Delay(4000);
+        if (token == _statusToken)
+            _statusLabel.Text = string.Empty;
     }
 
     private const string KeyCodesText = """

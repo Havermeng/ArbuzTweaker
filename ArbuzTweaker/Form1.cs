@@ -41,10 +41,17 @@ public partial class Form1 : Form
 
         _appVersion = GetType().Assembly.GetName().Version?.ToString() ?? "1.0.0";
         _updateService = new UpdateService(_appVersion);
+        var initialSteamAccountId = _appSettingsService.Load().PreferredSteamAccountId32;
         _dota2Service = new Dota2Service(_fileBackupService, _logService);
-        _dota2Service.PreferredSteamAccountId32 = _appSettingsService.Load().PreferredSteamAccountId32;
+        _dota2Service.PreferredSteamAccountId32 = initialSteamAccountId;
         _scpSlService = new ScpSlService(_fileBackupService, _logService);
-        _scpSlService.PreferredSteamAccountId32 = _appSettingsService.Load().PreferredSteamAccountId32;
+        _scpSlService.PreferredSteamAccountId32 = initialSteamAccountId;
+
+        // Обе игры используют один и тот же выбранный Steam-аккаунт: вкладки пишут его
+        // в settings.json, а сервисы читают оттуда при каждой операции — иначе смена
+        // аккаунта на вкладке Dota не доходила до SCP:SL до перезапуска приложения.
+        _dota2Service.PreferredSteamAccountResolver = () => _appSettingsService.Load().PreferredSteamAccountId32;
+        _scpSlService.PreferredSteamAccountResolver = () => _appSettingsService.Load().PreferredSteamAccountId32;
 
         InitializeComponents();
         LoadTabs();
@@ -340,13 +347,25 @@ public partial class Form1 : Form
 
     private void ShowTab(string name)
     {
-        _contentPanel.Controls.Clear();
-        if (_tabs.TryGetValue(name, out var tab))
+        if (!_tabs.TryGetValue(name, out var tab))
+            return;
+
+        if (tab.Parent == null)
         {
             tab.Dock = DockStyle.Fill;
             tab.BackColor = UiTheme.Surface;
+            tab.Visible = false;
             _contentPanel.Controls.Add(tab);
         }
+
+        foreach (var otherTab in _tabs.Values)
+        {
+            if (!ReferenceEquals(otherTab, tab) && otherTab.Parent != null)
+                otherTab.Visible = false;
+        }
+
+        tab.Visible = true;
+        tab.BringToFront();
     }
 
     private async void CheckForUpdatesAsync()
@@ -375,20 +394,21 @@ public partial class Form1 : Form
                             || downloadedPath.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
                             || downloadedPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
 
+                        // SHA256 сверяется для любого скачанного файла, включая portable-архив.
+                        var sha256 = _updateService.GetFileSha256(downloadedPath);
+                        if (!_updateService.VerifyFileSha256(downloadedPath, update.ExpectedSha256))
+                        {
+                            MessageBox.Show(
+                                "Обновление скачано, но контрольная сумма не совпала с релизом GitHub.\n\n" +
+                                "Файл не будет использован.",
+                                "Проверка обновления",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Error);
+                            return;
+                        }
+
                         if (isInstaller)
                         {
-                            var sha256 = _updateService.GetFileSha256(downloadedPath);
-                            if (!_updateService.VerifyFileSha256(downloadedPath, update.ExpectedSha256))
-                            {
-                                MessageBox.Show(
-                                    "Обновление скачано, но контрольная сумма не совпала с релизом GitHub.\n\n" +
-                                    "Установщик не будет запущен.",
-                                    "Проверка обновления",
-                                    MessageBoxButtons.OK,
-                                    MessageBoxIcon.Error);
-                                return;
-                            }
-
                             var hasSignature = _updateService.HasAuthenticodeSignature(downloadedPath);
                             var installNowResult = MessageBox.Show(
                                 "Обновление скачано.\n\n" +
@@ -427,6 +447,8 @@ public partial class Form1 : Form
                                     MessageBox.Show(launchResult.Message, "Ошибка обновления", MessageBoxButtons.OK, MessageBoxIcon.Error);
                                 }
                             }
+
+                            return;
                         }
 
                         MessageBox.Show($"Обновление скачано:\n{downloadedPath}", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);

@@ -21,6 +21,8 @@ public partial class ScpSlLaunchOptionsTab : UserControl
     private Label _statusLabel = null!;
     private bool _isUpdatingUi;
     private bool _isLoadingSteamAccounts;
+    private int _statusToken;
+    private int _lastOptionsPanelWidth = -1;
 
     public ScpSlLaunchOptionsTab(ScpSlService scpSlService, AppSettingsService appSettingsService)
     {
@@ -126,6 +128,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         {
             Text = "Вкладка редактирует только строку LaunchOptions для SCP: Secret Laboratory в пользовательском localconfig.vdf Steam.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 12)
@@ -160,6 +163,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         {
             Text = "Каждая строка ниже - отдельная команда запуска. При сохранении твикер объединит строки и запишет их обратно в LaunchOptions.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 10)
@@ -188,6 +192,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         {
             Text = "Эти пункты добавляют или убирают строки в LaunchOptions. Перед записью localconfig.vdf создаётся файловый бэкап.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 10)
@@ -202,7 +207,11 @@ public partial class ScpSlLaunchOptionsTab : UserControl
             Margin = new Padding(0, 0, 0, 12)
         };
         UiTheme.StyleListPanel(_optionsPanel);
-        _optionsPanel.Resize += (s, e) => PopulateOptionsPanel();
+        _optionsPanel.Resize += (s, e) =>
+        {
+            if (_optionsPanel.ClientSize.Width != _lastOptionsPanelWidth)
+                PopulateOptionsPanel();
+        };
         PopulateOptionsPanel();
 
         var buttonsPanel = new FlowLayoutPanel
@@ -217,7 +226,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         var applyButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
         applyButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveAndApplyAsync);
 
-        var helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
+        var helpButton = new Button { Text = "Как это работает?", AutoSize = true, MinimumSize = new Size(0, 35), Padding = new Padding(10, 0, 10, 0), Margin = new Padding(0, 0, 10, 0) };
         helpButton.Click += (s, e) => ShowHelpDialog();
 
         var openFileButton = new Button { Text = "Показать localconfig.vdf", Size = new Size(230, 35), Margin = new Padding(0, 0, 10, 0) };
@@ -371,6 +380,14 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
     private async Task ApplyLaunchOptionsAsync(IReadOnlyList<string> enabledOptions, bool isReset)
     {
+        // «Не нужно обновлять» и «некуда писать» — разные случаи: без этой проверки
+        // отсутствие localconfig.vdf заканчивалось зелёным «Сохранено» без записи.
+        if (!await _scpSlService.HasLocalConfigAsync())
+        {
+            ShowStatus("Не найден localconfig.vdf выбранного Steam-аккаунта", Color.Orange);
+            return;
+        }
+
         var needsUpdate = await _scpSlService.NeedsExactLaunchOptionsUpdateAsync(enabledOptions);
 
         var steamWasRunning = false;
@@ -414,7 +431,7 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
         if (steamClosed)
         {
-            if (_scpSlService.StartSteam())
+            if (await _scpSlService.StartSteamAsync())
                 ShowStatus($"{baseMessage}. Steam перезапущен", Color.Green);
             else
                 ShowStatus($"{baseMessage}. Не удалось запустить Steam", Color.Orange);
@@ -439,9 +456,10 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         var selectedOptions = new HashSet<string>(GetSelectedOptionsFromText(), StringComparer.OrdinalIgnoreCase);
         var preserveState = _isUpdatingUi;
         _isUpdatingUi = true;
+        _lastOptionsPanelWidth = _optionsPanel.ClientSize.Width;
 
         _optionsPanel.SuspendLayout();
-        _optionsPanel.Controls.Clear();
+        UiTheme.ClearAndDisposeControls(_optionsPanel);
 
         var y = 8;
         var rowIndex = 0;
@@ -523,6 +541,16 @@ public partial class ScpSlLaunchOptionsTab : UserControl
     {
         var options = GetSelectedOptionsFromText().ToList();
         options.RemoveAll(existing => string.Equals(existing, option, StringComparison.OrdinalIgnoreCase));
+
+        // Составная опция "-ru --weak-http-security" иначе дублирует одиночный -ru,
+        // если он уже стоял в параметрах запуска отдельной командой.
+        if (enabled && string.Equals(option, RuWeakHttpSecurityOption, StringComparison.OrdinalIgnoreCase))
+        {
+            for (var i = 0; i < options.Count; i++)
+                options[i] = NormalizeWhitespace(RemovePhrase(RemovePhrase(options[i], "-ru"), "--weak-http-security"));
+
+            options.RemoveAll(string.IsNullOrWhiteSpace);
+        }
 
         if (enabled)
             options.Insert(0, option);
@@ -641,9 +669,11 @@ public partial class ScpSlLaunchOptionsTab : UserControl
 
     private async void ShowStatus(string message, Color color)
     {
+        var token = ++_statusToken;
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
-        await Task.Delay(2500);
-        _statusLabel.Text = string.Empty;
+        await Task.Delay(4000);
+        if (token == _statusToken)
+            _statusLabel.Text = string.Empty;
     }
 }

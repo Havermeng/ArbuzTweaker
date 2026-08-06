@@ -8,6 +8,7 @@ namespace ArbuzTweaker;
 
 public sealed class RegistryBackupService
 {
+    private readonly object _syncRoot = new();
     private readonly AppLogService _logService;
     private readonly string _backupDirectory;
     private readonly string _backupFilePath;
@@ -32,28 +33,35 @@ public sealed class RegistryBackupService
     {
         try
         {
-            var backup = LoadBackup();
-            var key = RegistryBackupEntry.CreateKey(rootName, keyPath, valueName);
-            if (backup.Entries.ContainsKey(key))
-                return;
-
-            using var registryKey = OpenRoot(rootName).OpenSubKey(keyPath, false);
-            var value = registryKey?.GetValue(valueName);
-            var valueKind = GetValueKind(registryKey, valueName);
-            backup.Entries[key] = new RegistryBackupEntry
+            lock (_syncRoot)
             {
-                Group = group,
-                RootName = rootName,
-                KeyPath = keyPath,
-                ValueName = valueName,
-                Existed = value != null,
-                ValueKind = valueKind,
-                DwordValue = value is int intValue ? intValue : null,
-                StringValue = value is string stringValue ? stringValue : null,
-                CapturedAt = DateTimeOffset.Now
-            };
+                var backup = LoadBackup();
+                var key = RegistryBackupEntry.CreateKey(rootName, keyPath, valueName);
+                if (backup.Entries.ContainsKey(key))
+                    return;
 
-            SaveBackup(backup);
+                using var registryKey = OpenRoot(rootName).OpenSubKey(keyPath, false);
+                var value = registryKey?.GetValue(valueName);
+                var valueKind = GetValueKind(registryKey, valueName);
+                backup.Entries[key] = new RegistryBackupEntry
+                {
+                    Group = group,
+                    RootName = rootName,
+                    KeyPath = keyPath,
+                    ValueName = valueName,
+                    Existed = value != null,
+                    ValueKind = valueKind,
+                    DwordValue = value is int intValue ? intValue : null,
+                    StringValue = value is string stringValue ? stringValue : null,
+                    QwordValue = value is long longValue ? longValue : null,
+                    BinaryValue = value as byte[],
+                    MultiStringValue = value as string[],
+                    CapturedAt = DateTimeOffset.Now
+                };
+
+                SaveBackup(backup);
+            }
+
             _logService.Info($"Registry backup captured: {rootName}\\{keyPath}\\{valueName}");
         }
         catch (Exception ex)
@@ -128,7 +136,12 @@ public sealed class RegistryBackupService
                 return new RegistryBackupData();
 
             var json = File.ReadAllText(_backupFilePath);
-            return JsonSerializer.Deserialize<RegistryBackupData>(json) ?? new RegistryBackupData();
+            var backup = JsonSerializer.Deserialize<RegistryBackupData>(json) ?? new RegistryBackupData();
+
+            // System.Text.Json создаёт словарь с регистрозависимым компаратором —
+            // восстанавливаем OrdinalIgnoreCase, на нём держится защита от повторной записи.
+            backup.Entries = new Dictionary<string, RegistryBackupEntry>(backup.Entries, StringComparer.OrdinalIgnoreCase);
+            return backup;
         }
         catch (Exception ex)
         {
@@ -141,7 +154,9 @@ public sealed class RegistryBackupService
     {
         Directory.CreateDirectory(_backupDirectory);
         var json = JsonSerializer.Serialize(backup, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(_backupFilePath, json);
+        var tempPath = _backupFilePath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, _backupFilePath, true);
     }
 
     private static RegistryKey OpenRoot(string rootName)
@@ -181,6 +196,24 @@ public sealed class RegistryBackupService
             return true;
         }
 
+        if (entry.QwordValue.HasValue)
+        {
+            key.SetValue(entry.ValueName, entry.QwordValue.Value, RegistryValueKind.QWord);
+            return true;
+        }
+
+        if (entry.BinaryValue != null)
+        {
+            key.SetValue(entry.ValueName, entry.BinaryValue, RegistryValueKind.Binary);
+            return true;
+        }
+
+        if (entry.MultiStringValue != null)
+        {
+            key.SetValue(entry.ValueName, entry.MultiStringValue, RegistryValueKind.MultiString);
+            return true;
+        }
+
         return false;
     }
 }
@@ -207,6 +240,12 @@ public sealed class RegistryBackupEntry
     public int? DwordValue { get; set; }
 
     public string? StringValue { get; set; }
+
+    public long? QwordValue { get; set; }
+
+    public byte[]? BinaryValue { get; set; }
+
+    public string[]? MultiStringValue { get; set; }
 
     public DateTimeOffset CapturedAt { get; set; }
 

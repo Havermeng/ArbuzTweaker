@@ -34,6 +34,22 @@ public class Dota2Service
     public string? DotaPath => _dotaPath;
     public string? SteamPath => _steamPath;
     public string? PreferredSteamAccountId32 { get; set; }
+    public Func<string?>? PreferredSteamAccountResolver { get; set; }
+
+    private string? ResolvePreferredSteamAccountId32()
+    {
+        try
+        {
+            var resolved = PreferredSteamAccountResolver?.Invoke();
+            if (!string.IsNullOrWhiteSpace(resolved))
+                return resolved;
+        }
+        catch
+        {
+        }
+
+        return PreferredSteamAccountId32;
+    }
 
     public async Task<(string? dotaPath, string? steamPath)> FindDota2Async()
     {
@@ -168,6 +184,10 @@ public class Dota2Service
             if (!IsSteamRunning())
                 return true;
 
+            // Штатное завершение: Steam сохраняет localconfig.vdf только при чистом выходе.
+            if (TryRequestSteamShutdown() && WaitForSteamToFullyExit(20000))
+                return true;
+
             var processes = System.Diagnostics.Process.GetProcessesByName("steam");
 
             foreach (var process in processes)
@@ -198,13 +218,11 @@ public class Dota2Service
         });
     }
 
-    public bool StartSteam()
+    private bool TryRequestSteamShutdown()
     {
         try
         {
             var steamPath = GetSteamPathFromRegistry();
-            WaitForSteamToFullyExit();
-
             if (!string.IsNullOrWhiteSpace(steamPath))
             {
                 var steamExePath = Path.Combine(steamPath, "steam.exe");
@@ -213,27 +231,66 @@ public class Dota2Service
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                     {
                         FileName = steamExePath,
+                        Arguments = "-shutdown",
                         WorkingDirectory = steamPath,
                         UseShellExecute = true
                     });
-
-                    if (WaitForSteamToStart())
-                        return true;
+                    return true;
                 }
             }
 
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "steam://open/main",
+                FileName = "steam://exit",
                 UseShellExecute = true
             });
-
-            return WaitForSteamToStart();
+            return true;
         }
         catch
         {
             return false;
         }
+    }
+
+    public async Task<bool> StartSteamAsync()
+    {
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var steamPath = GetSteamPathFromRegistry();
+                WaitForSteamToFullyExit();
+
+                if (!string.IsNullOrWhiteSpace(steamPath))
+                {
+                    var steamExePath = Path.Combine(steamPath, "steam.exe");
+                    if (File.Exists(steamExePath))
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = steamExePath,
+                            WorkingDirectory = steamPath,
+                            UseShellExecute = true
+                        });
+
+                        if (WaitForSteamToStart())
+                            return true;
+                    }
+                }
+
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "steam://open/main",
+                    UseShellExecute = true
+                });
+
+                return WaitForSteamToStart();
+            }
+            catch
+            {
+                return false;
+            }
+        });
     }
 
     private bool WaitForSteamToFullyExit(int timeoutMilliseconds = 10000)
@@ -284,6 +341,22 @@ public class Dota2Service
             catch { }
 
             return null;
+        });
+    }
+
+    public async Task<bool> HasLocalConfigAsync()
+    {
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var steamPath = GetSteamPathFromRegistry();
+                return !string.IsNullOrWhiteSpace(steamPath) && GetLocalConfigPaths(steamPath).Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
         });
     }
 
@@ -605,50 +678,84 @@ public class Dota2Service
         });
     }
 
+    // Путь до блока с параметрами запуска внутри localconfig.vdf. В файле есть ещё
+    // минимум две секции "apps" (CDN-токены и настройки контроллера) со своими блоками
+    // "570" — писать в них нельзя, поэтому секция определяется по полному пути.
+    private static readonly string[] SteamAppsPath = { "software", "valve", "steam", "apps" };
+    private static readonly string[] DotaAppPath = { "software", "valve", "steam", "apps", "570" };
+
     private string? GetExistingLaunchOptions(string configPath)
     {
         try
         {
             var content = File.ReadAllText(configPath);
             var lines = content.Split('\n');
-            bool inAppsSection = false;
-            bool inDotaSection = false;
-            int braceCount = 0;
+            var stack = new List<string>();
+            string? pendingKey = null;
 
             foreach (var line in lines)
             {
-                if (!inAppsSection && string.Equals(line.Trim(), "\"apps\"", StringComparison.Ordinal))
+                var trimmed = line.Trim();
+
+                if (trimmed == "{")
                 {
-                    inAppsSection = true;
-                    braceCount = 0;
+                    stack.Add(pendingKey ?? string.Empty);
+                    pendingKey = null;
                     continue;
                 }
 
-                if (inAppsSection)
+                if (trimmed == "}")
                 {
-                    braceCount += line.Count(c => c == '{') - line.Count(c => c == '}');
-
-                    if (!inDotaSection && string.Equals(line.Trim(), "\"570\"", StringComparison.Ordinal))
-                    {
-                        inDotaSection = true;
-                        continue;
-                    }
-
-                    if (inDotaSection && line.Contains("\"LaunchOptions\""))
-                    {
-                        return ExtractQuotedValue(line, "LaunchOptions");
-                    }
-
-                    if (inDotaSection && braceCount == 1 && line.Trim() == "}")
-                        inDotaSection = false;
-
-                    if (braceCount == 0 && line.Trim() == "}")
-                        inAppsSection = false;
+                    if (stack.Count > 0)
+                        stack.RemoveAt(stack.Count - 1);
+                    pendingKey = null;
+                    continue;
                 }
+
+                if (TryGetBareKey(trimmed, out var key))
+                {
+                    pendingKey = key;
+                    continue;
+                }
+
+                pendingKey = null;
+
+                if (StackEndsWith(stack, DotaAppPath) && line.Contains("\"LaunchOptions\""))
+                    return ExtractQuotedValue(line, "LaunchOptions");
             }
         }
         catch { }
         return null;
+    }
+
+    private static bool TryGetBareKey(string trimmedLine, out string key)
+    {
+        key = string.Empty;
+
+        if (trimmedLine.Length < 2
+            || trimmedLine[0] != '"'
+            || trimmedLine[^1] != '"'
+            || trimmedLine.IndexOf('"', 1) != trimmedLine.Length - 1)
+        {
+            return false;
+        }
+
+        key = trimmedLine[1..^1];
+        return true;
+    }
+
+    private static bool StackEndsWith(List<string> stack, string[] suffix)
+    {
+        if (stack.Count < suffix.Length)
+            return false;
+
+        for (var i = 0; i < suffix.Length; i++)
+        {
+            if (!string.Equals(stack[stack.Count - suffix.Length + i], suffix[i], StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
     }
 
     private string? GetSteamPathFromRegistry()
@@ -684,7 +791,7 @@ public class Dota2Service
 
     private List<string> GetLocalConfigPaths(string steamPath)
     {
-        return SteamUserResolver.GetTargetLocalConfigPaths(steamPath, PreferredSteamAccountId32);
+        return SteamUserResolver.GetTargetLocalConfigPaths(steamPath, ResolvePreferredSteamAccountId32());
     }
 
     private string? GetPrimarySteamUserPath()
@@ -693,7 +800,7 @@ public class Dota2Service
         if (string.IsNullOrWhiteSpace(steamPath))
             return null;
 
-        return SteamUserResolver.GetPrimarySteamUserPath(steamPath, PreferredSteamAccountId32);
+        return SteamUserResolver.GetPrimarySteamUserPath(steamPath, ResolvePreferredSteamAccountId32());
     }
 
     public async Task<IReadOnlyList<SteamUserInfo>> GetSteamUsersAsync()
@@ -797,55 +904,73 @@ public class Dota2Service
         {
             var content = File.ReadAllText(configPath);
 
-            if (!content.Contains("\"apps\"") || !content.Contains("\"570\""))
+            if (!content.Contains("\"apps\""))
                 return false;
 
+            var lineEndingSuffix = content.Contains("\r\n") ? "\r" : string.Empty;
             var lines = content.Split('\n');
-            var result = new List<string>();
-            bool inAppsSection = false;
-            bool inDotaSection = false;
-            bool updated = false;
-            int braceCount = 0;
+            var result = new List<string>(lines.Length + 4);
+            var stack = new List<string>();
+            string? pendingKey = null;
+            var updated = false;
+            var dotaBlockSeenInTargetApps = false;
 
             foreach (var line in lines)
             {
-                string newLine = line;
+                var trimmed = line.Trim();
 
-                if (!inAppsSection && string.Equals(line.Trim(), "\"apps\"", StringComparison.Ordinal))
+                if (trimmed == "{")
                 {
-                    inAppsSection = true;
-                    braceCount = 0;
+                    stack.Add(pendingKey ?? string.Empty);
+                    pendingKey = null;
+                    result.Add(line);
+                    continue;
                 }
 
-                if (inAppsSection)
+                if (trimmed == "}")
                 {
-                    braceCount += line.Count(c => c == '{') - line.Count(c => c == '}');
-
-                    if (!inDotaSection && string.Equals(line.Trim(), "\"570\"", StringComparison.Ordinal))
+                    if (!updated && StackEndsWith(stack, DotaAppPath))
                     {
-                        inDotaSection = true;
+                        result.Add(CreateQuotedValueLine(line, "LaunchOptions", options) + lineEndingSuffix);
+                        updated = true;
                     }
-
-                    if (inDotaSection && line.Contains("\"LaunchOptions\""))
+                    else if (!updated && !dotaBlockSeenInTargetApps && StackEndsWith(stack, SteamAppsPath))
                     {
-                        newLine = ReplaceQuotedValue(line, "LaunchOptions", options);
+                        var indentation = GetIndentation(line) + "\t";
+                        result.Add($"{indentation}\"570\"{lineEndingSuffix}");
+                        result.Add($"{indentation}{{{lineEndingSuffix}");
+                        result.Add($"{indentation}\t\"LaunchOptions\"\t\t\"{EscapeVdfValue(options)}\"{lineEndingSuffix}");
+                        result.Add($"{indentation}}}{lineEndingSuffix}");
                         updated = true;
                     }
 
-                    if (inDotaSection && !updated && braceCount == 1 && line.Trim() == "}")
-                    {
-                        result.Add(CreateQuotedValueLine(line, "LaunchOptions", options));
-                        updated = true;
-                    }
-
-                    if (inDotaSection && braceCount == 1 && line.Trim() == "}")
-                        inDotaSection = false;
-
-                    if (braceCount == 0 && line.Trim() == "}")
-                        inAppsSection = false;
+                    if (stack.Count > 0)
+                        stack.RemoveAt(stack.Count - 1);
+                    pendingKey = null;
+                    result.Add(line);
+                    continue;
                 }
 
-                result.Add(newLine);
+                if (TryGetBareKey(trimmed, out var key))
+                {
+                    pendingKey = key;
+                    if (key == "570" && StackEndsWith(stack, SteamAppsPath))
+                        dotaBlockSeenInTargetApps = true;
+
+                    result.Add(line);
+                    continue;
+                }
+
+                pendingKey = null;
+
+                if (!updated && StackEndsWith(stack, DotaAppPath) && line.Contains("\"LaunchOptions\""))
+                {
+                    result.Add(ReplaceQuotedValue(line, "LaunchOptions", options));
+                    updated = true;
+                    continue;
+                }
+
+                result.Add(line);
             }
 
             if (!updated)

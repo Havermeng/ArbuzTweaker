@@ -16,6 +16,7 @@ public partial class ThirdPartyToolsTab : UserControl
     private Label _msiStateLabel = null!;
     private Label _intelXtuStateLabel = null!;
     private Label _statusLabel = null!;
+    private int _statusToken;
 
     public ThirdPartyToolsTab(NvidiaInspectorService nvidiaInspectorService, MsiAfterburnerService msiAfterburnerService, IntelXtuService intelXtuService)
     {
@@ -97,6 +98,8 @@ public partial class ThirdPartyToolsTab : UserControl
         root.Controls.Add(_statusLabel, 0, 5);
 
         Controls.Add(root);
+
+        UiTheme.EnableDynamicLabelWrap(root, infoLabel, _statusLabel);
     }
 
     private static Panel CreateToolPanel(string title, string description, string stateText, out Label stateLabel, params Button[] buttons)
@@ -135,11 +138,13 @@ public partial class ThirdPartyToolsTab : UserControl
         foreach (var button in buttons)
             buttonsPanel.Controls.Add(button);
 
+        var descriptionLabel = CreateDescriptionLabel(description, new Padding(0, 0, 0, 10));
         layout.Controls.Add(UiTheme.CreateSectionTitle(title));
-        layout.Controls.Add(CreateDescriptionLabel(description, new Padding(0, 0, 0, 10)));
+        layout.Controls.Add(descriptionLabel);
         layout.Controls.Add(stateLabel);
         layout.Controls.Add(buttonsPanel);
         section.Controls.Add(layout);
+        UiTheme.EnableDynamicLabelWrap(section, descriptionLabel, stateLabel, buttonsPanel);
         return section;
     }
 
@@ -286,13 +291,17 @@ public partial class ThirdPartyToolsTab : UserControl
 
     private async void ShowStatus(string message, Color color, bool autoClear)
     {
+        // Токен: любой новый статус отменяет отложенную очистку предыдущего,
+        // иначе старый таймер стирал сообщение о долгой установке через 2,5 секунды.
+        var token = ++_statusToken;
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
 
         if (!autoClear)
             return;
 
-        await Task.Delay(2500);
-        _statusLabel.Text = string.Empty;
+        await Task.Delay(4000);
+        if (token == _statusToken)
+            _statusLabel.Text = string.Empty;
     }
 }

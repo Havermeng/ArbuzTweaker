@@ -35,6 +35,8 @@ public partial class DotaVideoConfigTab : UserControl
     private Button _unlockReadOnlyButton = null!;
     private bool _isUpdatingVideoUi;
     private bool _isLoadingSteamAccounts;
+    private int _statusToken;
+    private int _lastSettingsPanelWidth = -1;
 
     public DotaVideoConfigTab(Dota2Service dota2Service, AppSettingsService appSettingsService)
     {
@@ -129,6 +131,7 @@ public partial class DotaVideoConfigTab : UserControl
         {
             Text = "Эта вкладка читает и меняет файл video.txt. Одни галочки переключают уже существующие значения, а другие добавляют в файл недостающие строки.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 12)
@@ -188,7 +191,11 @@ public partial class DotaVideoConfigTab : UserControl
             Margin = new Padding(0, 0, 0, 12)
         };
         UiTheme.StyleListPanel(_settingsPanel);
-        _settingsPanel.Resize += (s, e) => PopulateSettingsPanel();
+        _settingsPanel.Resize += (s, e) =>
+        {
+            if (_settingsPanel.ClientSize.Width != _lastSettingsPanelWidth)
+                PopulateSettingsPanel();
+        };
         PopulateSettingsPanel();
 
         var buttonsPanel = new FlowLayoutPanel
@@ -203,7 +210,7 @@ public partial class DotaVideoConfigTab : UserControl
         var applyButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
         applyButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveAndApplyAsync);
 
-        var helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
+        var helpButton = new Button { Text = "Как это работает?", AutoSize = true, MinimumSize = new Size(0, 35), Padding = new Padding(10, 0, 10, 0), Margin = new Padding(0, 0, 10, 0) };
         helpButton.Click += (s, e) => ShowHelpDialog();
 
         var openFolderButton = new Button { Text = "Показать video.txt", Size = new Size(210, 35), Margin = new Padding(0, 0, 10, 0) };
@@ -423,9 +430,10 @@ public partial class DotaVideoConfigTab : UserControl
 
         var preserveState = _isUpdatingVideoUi;
         _isUpdatingVideoUi = true;
+        _lastSettingsPanelWidth = _settingsPanel.ClientSize.Width;
 
         _settingsPanel.SuspendLayout();
-        _settingsPanel.Controls.Clear();
+        UiTheme.ClearAndDisposeControls(_settingsPanel);
         _settingCheckBoxes.Clear();
 
         var y = 8;
@@ -519,7 +527,10 @@ public partial class DotaVideoConfigTab : UserControl
         _isUpdatingVideoUi = true;
 
         foreach (var definition in SettingDefinitions)
-            _settingCheckBoxes[definition.Key].Checked = definition.IsEnabled(GetSettingValue(definition.Key));
+        {
+            if (_settingCheckBoxes.TryGetValue(definition.Key, out var checkBox))
+                checkBox.Checked = definition.IsEnabled(GetSettingValue(definition.Key));
+        }
 
         _isUpdatingVideoUi = false;
     }
@@ -657,10 +668,12 @@ public partial class DotaVideoConfigTab : UserControl
 
     private async void ShowStatus(string message, Color color)
     {
+        var token = ++_statusToken;
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
-        await Task.Delay(2000);
-        _statusLabel.Text = string.Empty;
+        await Task.Delay(4000);
+        if (token == _statusToken)
+            _statusLabel.Text = string.Empty;
     }
 
     private void ShowHelpDialog()

@@ -1,8 +1,9 @@
 using System;
 using System.IO;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Threading.Tasks;
 using Octokit;
 
@@ -16,7 +17,7 @@ public class UpdateService
     public const string PortableAssetName = "ArbuzTweaker-Portable.zip";
     public const string ChecksumsAssetName = "SHA256SUMS.txt";
     private static readonly TimeSpan UpdateCheckTimeout = TimeSpan.FromSeconds(20);
-    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(10);
 
     private readonly string _currentVersion;
     private readonly string _downloadPath;
@@ -45,11 +46,22 @@ public class UpdateService
         {
             var github = new GitHubClient(new ProductHeaderValue("ArbuzTweaker"));
             var releases = await github.Repository.Release.GetAll(Owner, Repo).WaitAsync(UpdateCheckTimeout);
-            
-            if (releases.Count == 0)
+
+            // GetAll сортирует по дате создания и включает pre-release/draft:
+            // «последним» считается максимальная стабильная версия, а не свежайшая запись.
+            Release? latest = null;
+            foreach (var release in releases)
+            {
+                if (release.Prerelease || release.Draft)
+                    continue;
+
+                if (latest == null || CompareVersions(release.TagName.TrimStart('v'), latest.TagName.TrimStart('v')) > 0)
+                    latest = release;
+            }
+
+            if (latest == null)
                 return UpdateCheckResult.NoUpdate;
 
-            var latest = releases[0];
             var latestVersion = latest.TagName.TrimStart('v');
 
             if (CompareVersions(latestVersion, _currentVersion) > 0)
@@ -66,7 +78,8 @@ public class UpdateService
         }
         catch
         {
-            return UpdateCheckResult.NoUpdate;
+            // Сетевая ошибка/лимит API — не то же самое, что «обновлений нет».
+            return UpdateCheckResult.CheckFailed;
         }
     }
 
@@ -84,9 +97,14 @@ public class UpdateService
             if (string.IsNullOrWhiteSpace(fileName))
                 fileName = "ArbuzTweaker-update";
 
-            var bytes = await client.GetByteArrayAsync(url);
             var filePath = Path.Combine(_downloadPath, fileName);
-            await File.WriteAllBytesAsync(filePath, bytes);
+            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+            await using (var source = await response.Content.ReadAsStreamAsync())
+            await using (var target = File.Create(filePath))
+            {
+                await source.CopyToAsync(target);
+            }
 
             return filePath;
         }
@@ -160,14 +178,99 @@ public class UpdateService
 
     public bool HasAuthenticodeSignature(string filePath)
     {
+        // X509CertificateLoader читает файлы-сертификаты и не умеет извлекать Authenticode
+        // из PE/MSI (для них он всегда бросал исключение — «подпись не найдена» показывалось
+        // даже для корректно подписанных релизов). WinVerifyTrust проверяет и подпись, и цепочку.
         try
         {
-            using var certificate = X509CertificateLoader.LoadCertificateFromFile(filePath);
-            return certificate != null;
+            return AuthenticodeVerifier.HasValidSignature(filePath);
         }
         catch
         {
             return false;
+        }
+    }
+
+    private static class AuthenticodeVerifier
+    {
+        private const uint WtdUiNone = 2;
+        private const uint WtdRevokeNone = 0;
+        private const uint WtdChoiceFile = 1;
+        private const uint WtdStateActionVerify = 1;
+        private const uint WtdStateActionClose = 2;
+        private const uint WtdRevocationCheckNone = 0x00000010;
+
+        private static readonly Guid WintrustActionGenericVerifyV2 = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
+
+        public static bool HasValidSignature(string filePath)
+        {
+            var fileInfoPtr = IntPtr.Zero;
+
+            try
+            {
+                var fileInfo = new WinTrustFileInfo
+                {
+                    cbStruct = (uint)Marshal.SizeOf<WinTrustFileInfo>(),
+                    pcwszFilePath = filePath
+                };
+
+                fileInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf<WinTrustFileInfo>());
+                Marshal.StructureToPtr(fileInfo, fileInfoPtr, false);
+
+                var trustData = new WinTrustData
+                {
+                    cbStruct = (uint)Marshal.SizeOf<WinTrustData>(),
+                    dwUIChoice = WtdUiNone,
+                    fdwRevocationChecks = WtdRevokeNone,
+                    dwUnionChoice = WtdChoiceFile,
+                    dwStateAction = WtdStateActionVerify,
+                    dwProvFlags = WtdRevocationCheckNone,
+                    pFile = fileInfoPtr
+                };
+
+                var actionId = WintrustActionGenericVerifyV2;
+                var result = WinVerifyTrust(IntPtr.Zero, ref actionId, ref trustData);
+
+                trustData.dwStateAction = WtdStateActionClose;
+                WinVerifyTrust(IntPtr.Zero, ref actionId, ref trustData);
+
+                return result == 0;
+            }
+            finally
+            {
+                if (fileInfoPtr != IntPtr.Zero)
+                    Marshal.FreeHGlobal(fileInfoPtr);
+            }
+        }
+
+        [DllImport("wintrust.dll", CharSet = CharSet.Unicode)]
+        private static extern int WinVerifyTrust(IntPtr hwnd, ref Guid actionId, ref WinTrustData trustData);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WinTrustFileInfo
+        {
+            public uint cbStruct;
+            [MarshalAs(UnmanagedType.LPWStr)] public string pcwszFilePath;
+            public IntPtr hFile;
+            public IntPtr pgKnownSubject;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WinTrustData
+        {
+            public uint cbStruct;
+            public IntPtr pPolicyCallbackData;
+            public IntPtr pSIPClientData;
+            public uint dwUIChoice;
+            public uint fdwRevocationChecks;
+            public uint dwUnionChoice;
+            public IntPtr pFile;
+            public uint dwStateAction;
+            public IntPtr hWVTStateData;
+            public IntPtr pwszURLReference;
+            public uint dwProvFlags;
+            public uint dwUIContext;
+            public IntPtr pSignatureSettings;
         }
     }
 
@@ -288,7 +391,9 @@ public class UpdateService
             string.Empty
         });
 
-        File.WriteAllText(scriptPath, script);
+        // BOM обязателен: powershell.exe 5.1 без BOM читает файл в ANSI, и кириллица
+        // в путях (например, имя профиля пользователя) превращалась в мусор.
+        File.WriteAllText(scriptPath, script, new UTF8Encoding(true));
 
         Process.Start(new ProcessStartInfo
         {
@@ -315,9 +420,12 @@ public sealed record UpdateCheckResult(
     string? NewVersion,
     string? DownloadUrl,
     string? AssetName,
-    string? ExpectedSha256)
+    string? ExpectedSha256,
+    bool CheckSucceeded = true)
 {
     public static UpdateCheckResult NoUpdate { get; } = new(false, null, null, null, null);
+
+    public static UpdateCheckResult CheckFailed { get; } = new(false, null, null, null, null, false);
 }
 
 public sealed record UpdateLaunchResult(

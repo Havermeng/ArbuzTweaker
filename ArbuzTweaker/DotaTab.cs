@@ -102,8 +102,6 @@ public partial class DotaTab : UserControl
         .SelectMany(group => group.Commands)
         .ToArray();
 
-    private static readonly string[] LegacyManagedLaunchOptions = { "-console", "-novid" };
-
     private readonly ConfigService _configService;
     private readonly Dota2Service _dota2Service;
     private readonly AppSettingsService _appSettingsService;
@@ -124,6 +122,8 @@ public partial class DotaTab : UserControl
     private bool _pathFound;
     private bool _isUpdatingAutoexecUi;
     private string _lastSavedAutoexecText = string.Empty;
+    private int _statusToken;
+    private int _lastCommandPanelWidth = -1;
 
     public DotaTab(
         ConfigService configService,
@@ -163,6 +163,7 @@ public partial class DotaTab : UserControl
         {
             Dock = DockStyle.Fill
         };
+        UiTheme.StyleTabControl(tabControl);
 
         var configPage = new TabPage
         {
@@ -247,6 +248,7 @@ public partial class DotaTab : UserControl
         {
             Text = $"Здесь отображается и редактируется содержимое файла {Dota2Service.AutoexecFileName}. Отмеченные команды ниже тоже добавляются сюда.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 10)
@@ -277,6 +279,7 @@ public partial class DotaTab : UserControl
         {
             Text = $"Эти галочки добавляют или убирают строки в {Dota2Service.AutoexecFileName}.",
             AutoSize = true,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = Color.Gainsboro,
             MaximumSize = new Size(980, 0),
             Margin = new Padding(0, 0, 0, 10)
@@ -291,7 +294,11 @@ public partial class DotaTab : UserControl
             Margin = new Padding(0, 0, 0, 12)
         };
         UiTheme.StyleListPanel(_commandPanel);
-        _commandPanel.Resize += (s, e) => PopulateCommandPanel();
+        _commandPanel.Resize += (s, e) =>
+        {
+            if (_commandPanel.ClientSize.Width != _lastCommandPanelWidth)
+                PopulateCommandPanel();
+        };
         PopulateCommandPanel();
 
         var buttonsPanel = new FlowLayoutPanel
@@ -306,7 +313,7 @@ public partial class DotaTab : UserControl
         _saveButton = new Button { Text = "Применить", Size = new Size(120, 35), Margin = new Padding(0, 0, 10, 0) };
         _saveButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, SaveConfigAsync);
 
-        _helpButton = new Button { Text = "Как это работает?", Size = new Size(160, 35), Margin = new Padding(0, 0, 10, 0) };
+        _helpButton = new Button { Text = "Как это работает?", AutoSize = true, MinimumSize = new Size(0, 35), Padding = new Padding(10, 0, 10, 0), Margin = new Padding(0, 0, 10, 0) };
         _helpButton.Click += (s, e) => ShowHelpDialog();
 
         _openAutoexecButton = new Button { Text = $"Показать {Dota2Service.AutoexecFileName}", Size = new Size(220, 35), Margin = new Padding(0, 0, 10, 0) };
@@ -409,9 +416,10 @@ public partial class DotaTab : UserControl
 
         var preserveState = _isUpdatingAutoexecUi;
         _isUpdatingAutoexecUi = true;
+        _lastCommandPanelWidth = _commandPanel.ClientSize.Width;
 
         _commandPanel.SuspendLayout();
-        _commandPanel.Controls.Clear();
+        UiTheme.ClearAndDisposeControls(_commandPanel);
         _commandCheckBoxes.Clear();
         _numericCommandInputs.Clear();
 
@@ -650,31 +658,78 @@ public partial class DotaTab : UserControl
         string successMessage,
         string actionLabel)
     {
-        var needsLaunchOptionsUpdate = await _dota2Service.NeedsLaunchOptionsUpdateAsync(
-            Array.Empty<string>(),
-            LegacyManagedLaunchOptions,
-            includeAutoexec);
-
-        await _dota2Service.SaveAutoexecAsync(autoexecContent);
-
-        Dota2Service.LaunchOptionsApplyResult? applyResult = null;
-        if (needsLaunchOptionsUpdate)
-        {
-            applyResult = await _dota2Service.SetLaunchOptionsAsync(
+        // Здесь меняется только наличие +exec autoexec.cfg; остальные параметры запуска
+        // принадлежат вкладке «Параметры запуска» и не трогаются.
+        var needsLaunchOptionsUpdate = await _dota2Service.HasLocalConfigAsync()
+            && await _dota2Service.NeedsLaunchOptionsUpdateAsync(
                 Array.Empty<string>(),
-                LegacyManagedLaunchOptions,
+                Array.Empty<string>(),
                 includeAutoexec);
 
-            if (!applyResult.IsSuccess)
-            {
-                ShowStatus(applyResult.Message, Color.Orange);
-                return;
-            }
-        }
+        await _dota2Service.SaveAutoexecAsync(autoexecContent);
 
         if (!needsLaunchOptionsUpdate)
         {
             ShowStatus(successMessage, Color.Green);
+            return;
+        }
+
+        bool steamWasRunning = false;
+        bool steamClosed = false;
+
+        if (_dota2Service.IsSteamRunning())
+        {
+            steamWasRunning = true;
+
+            var closeSteamResult = MessageBox.Show(
+                $"Файл {Dota2Service.AutoexecFileName} сохранён, но в параметры запуска Dota 2 нужно внести {Dota2Service.AutoexecLaunchCommand}.\n\n" +
+                "Steam сейчас запущен: если менять параметры запуска при работающем Steam, он перезапишет их при выходе.\n\n" +
+                "Закрыть Steam и применить параметры запуска сейчас?",
+                "Steam запущен",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Warning);
+
+            if (closeSteamResult == DialogResult.Cancel)
+            {
+                ShowStatus($"{actionLabel}. Параметры запуска не изменены", Color.Orange);
+                return;
+            }
+
+            if (closeSteamResult == DialogResult.Yes)
+            {
+                steamClosed = await _dota2Service.CloseSteamAsync();
+                if (!steamClosed)
+                {
+                    ShowStatus("Не удалось закрыть Steam", Color.Orange);
+                    return;
+                }
+            }
+        }
+
+        var applyResult = await _dota2Service.SetLaunchOptionsAsync(
+            Array.Empty<string>(),
+            Array.Empty<string>(),
+            includeAutoexec);
+
+        if (!applyResult.IsSuccess)
+        {
+            ShowStatus(applyResult.Message, Color.Orange);
+            return;
+        }
+
+        if (steamClosed)
+        {
+            if (await _dota2Service.StartSteamAsync())
+                ShowStatus($"{actionLabel}. Steam перезапущен", Color.Green);
+            else
+                ShowStatus($"{actionLabel}. Не удалось запустить Steam", Color.Orange);
+
+            return;
+        }
+
+        if (steamWasRunning)
+        {
+            ShowStatus($"{actionLabel}. Перезапусти Steam, чтобы параметры запуска сохранились", Color.Orange);
             return;
         }
 
@@ -982,10 +1037,12 @@ public partial class DotaTab : UserControl
 
     private async void ShowStatus(string message, Color color)
     {
+        var token = ++_statusToken;
         _statusLabel.Text = message;
         _statusLabel.ForeColor = color;
-        await Task.Delay(2000);
-        _statusLabel.Text = string.Empty;
+        await Task.Delay(4000);
+        if (token == _statusToken)
+            _statusLabel.Text = string.Empty;
     }
 
     private sealed class ConfigCommandGroupDefinition
