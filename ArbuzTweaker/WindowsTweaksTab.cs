@@ -1062,8 +1062,19 @@ public partial class WindowsTweaksTab : UserControl
         };
         LayoutGameModePage();
 
+        var pcTuningPage = new TabPage
+        {
+            Text = "Оптимизация",
+            BackColor = UiTheme.Surface,
+            ForeColor = Color.White
+        };
+        pcTuningPage.Controls.Add(new PcTuningTab(
+            new PcTuningService(_registryBackupService),
+            _registryBackupService == null ? null : RestoreRegistryBackupAsync));
+
         tabControl.TabPages.Add(systemPage);
         tabControl.TabPages.Add(gameModePage);
+        tabControl.TabPages.Add(pcTuningPage);
         rootLayout.Controls.Add(tabControl, 0, 0);
         rootLayout.Controls.Add(_statusLabel, 0, 1);
         Controls.Add(rootLayout);
