@@ -123,26 +123,8 @@ public sealed class PcTuningService
             {
                 _backupService?.CaptureValue(BackupGroup, GetRootName(value.Root), value.KeyPath, value.Name);
 
-                using var key = CreateKey(value.Root, value.KeyPath);
-                if (key == null)
-                {
+                if (!WriteValue(value, enable))
                     failed = true;
-                    continue;
-                }
-
-                if (enable)
-                {
-                    key.SetValue(value.Name, value.EnabledValue, value.ValueKind);
-                }
-                else if (value.DisabledValue != null)
-                {
-                    key.SetValue(value.Name, value.DisabledValue, value.ValueKind);
-                }
-                else if (key.GetValue(value.Name) != null)
-                {
-                    // Значения по умолчанию не было — откат означает удаление параметра.
-                    key.DeleteValue(value.Name, false);
-                }
             }
             catch (Exception ex)
             {
@@ -152,6 +134,56 @@ public sealed class PcTuningService
         }
 
         return !failed;
+    }
+
+    /// <summary>
+    /// Пишет одно значение. Сначала обычным путём; если HKLM-запись отклонена
+    /// (раздел во владении TrustedInstaller), берёт раздел во владение и пишет так.
+    /// </summary>
+    private bool WriteValue(PcTuningValue value, bool enable)
+    {
+        try
+        {
+            using var key = CreateKey(value.Root, value.KeyPath);
+            if (key == null)
+                throw new UnauthorizedAccessException();
+
+            ApplyValue(key, value, enable);
+            return true;
+        }
+        catch (Exception ex) when (value.Root == PcTuningRoot.LocalMachine
+            && (ex is UnauthorizedAccessException or System.Security.SecurityException))
+        {
+            var ok = enable
+                ? RegistryElevation.SetValue(value.KeyPath, value.Name, value.EnabledValue, value.ValueKind)
+                : value.DisabledValue != null
+                    ? RegistryElevation.SetValue(value.KeyPath, value.Name, value.DisabledValue, value.ValueKind)
+                    : RegistryElevation.DeleteValue(value.KeyPath, value.Name);
+
+            if (ok)
+                _logService?.Info($"Wrote protected value by taking ownership: HKLM\\{value.KeyPath}\\{value.Name}");
+            else
+                _logService?.Error($"Failed to write even after taking ownership: HKLM\\{value.KeyPath}\\{value.Name}");
+
+            return ok;
+        }
+    }
+
+    private static void ApplyValue(RegistryKey key, PcTuningValue value, bool enable)
+    {
+        if (enable)
+        {
+            key.SetValue(value.Name, value.EnabledValue, value.ValueKind);
+        }
+        else if (value.DisabledValue != null)
+        {
+            key.SetValue(value.Name, value.DisabledValue, value.ValueKind);
+        }
+        else if (key.GetValue(value.Name) != null)
+        {
+            // Значения по умолчанию не было — откат означает удаление параметра.
+            key.DeleteValue(value.Name, false);
+        }
     }
 
     // ───────────── Гибернация ─────────────
