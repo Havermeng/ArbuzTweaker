@@ -105,7 +105,10 @@ public partial class WindowsTweaksTab : UserControl
                 RegistryGameValue.CurrentUser(@"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings", "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0, 1),
                 RegistryGameValue.CurrentUser(@"Software\Microsoft\Windows\CurrentVersion\PushNotifications", "ToastEnabled", 0, 1),
                 RegistryGameValue.LocalMachine(@"Software\Microsoft\Windows\CurrentVersion\PushNotifications", "ToastEnabled", 0, 1)
-            }),
+            })
+        {
+            Impact = UiTheme.Impact.AntiStutter
+        },
         new(
             "Режим низкой задержки DWM",
             "Ставит UseOLEDTaskMode=1 в DWM. Управление MPO вынесено в системную вкладку Windows.",
@@ -119,7 +122,10 @@ public partial class WindowsTweaksTab : UserControl
             {
                 RegistryGameValue.CurrentUser(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer", "AlwaysUnloadDll", 1, null),
                 RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer", "AlwaysUnloadDll", 1, null)
-            }),
+            })
+        {
+            Impact = UiTheme.Impact.AntiStutter
+        },
         new(
             "Отключение Game DVR",
             "Отключает встроенную запись игрового процесса Windows Game DVR.",
@@ -128,7 +134,10 @@ public partial class WindowsTweaksTab : UserControl
             {
                 RegistryGameValue.LocalMachine(@"SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR", 0, 1),
                 RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR", "AllowGameDVR", 0, 1)
-            }),
+            })
+        {
+            Impact = UiTheme.Impact.AntiStutter
+        },
         new(
             "Отключение V-Sync в DirectX",
             "Ставит DisableVSync=1 в Direct3D Global.",
@@ -153,7 +162,10 @@ public partial class WindowsTweaksTab : UserControl
             "Отключение энергосбережения USB",
             "Ставит DisableSelectiveSuspend=1 для USB, чтобы уменьшить задержки устройств ввода.",
             false,
-            new[] { RegistryGameValue.LocalMachine(@"System\CurrentControlSet\Services\USB", "DisableSelectiveSuspend", 1, 0) }),
+            new[] { RegistryGameValue.LocalMachine(@"System\CurrentControlSet\Services\USB", "DisableSelectiveSuspend", 1, 0) })
+        {
+            Impact = UiTheme.Impact.AntiStutter
+        },
         new(
             "Увеличение приоритета игр",
             "Ставит NetworkThrottlingIndex=ffffffff и Priority=6 для Tasks\\Games.",
@@ -176,7 +188,10 @@ public partial class WindowsTweaksTab : UserControl
                 RegistryGameValue.CurrentUser(@"SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR", "MicrophoneCaptureEnabled", 0, 1),
                 RegistryGameValue.CurrentUser(@"SOFTWARE\Microsoft\GameBar", "ShowStartupPanel", 0, 1),
                 RegistryGameValue.CurrentUser(@"SOFTWARE\Microsoft\GameBar", "UseNexusForGameBarInterface", 0, 1)
-            }),
+            })
+        {
+            Impact = UiTheme.Impact.AntiStutter
+        },
         new(
             "[Экспериментально] Низкая задержка Win32-презентации",
             "Включает Win32LowLatencyPresentationEnabled для текущего пользователя. Может снижать задержку в оконном и безрамочном режиме.",
@@ -883,15 +898,19 @@ public partial class WindowsTweaksTab : UserControl
             BackColor = UiTheme.Surface
         };
 
-        var systemCards = new List<(Panel Card, Control[] Children)>();
+        var systemCards = new List<(Panel Card, Control[] Children, Label Badge)>();
 
-        // Каждый твик — карточка на тёмной подложке (единый вид с вкладками «Игровой режим» и «Оптимизация»).
-        Panel MakeCard(params Control[] children)
+        // Каждый твик — карточка на тёмной подложке с маркером влияния справа вверху
+        // (единый вид с вкладками «Игровой режим» и «Оптимизация»).
+        Panel MakeCard(UiTheme.Impact impact, params Control[] children)
         {
             var card = UiTheme.CreateCard();
             foreach (var child in children)
                 card.Controls.Add(child);
-            systemCards.Add((card, children));
+
+            var badge = UiTheme.CreateImpactBadge(impact);
+            card.Controls.Add(badge);
+            systemCards.Add((card, children, badge));
             return card;
         }
 
@@ -960,30 +979,30 @@ public partial class WindowsTweaksTab : UserControl
         AddIntro(adminStatusLabel, 6);
 
         AddHeader(graphicsLabel);
-        AddCard(MakeCard(_mpoDisabledCheckBox, mpoDescriptionLabel, _mpoStateLabel, applyMpoButton));
+        AddCard(MakeCard(UiTheme.Impact.AntiStutter, _mpoDisabledCheckBox, mpoDescriptionLabel, _mpoStateLabel, applyMpoButton));
 
         AddHeader(memoryLabel);
-        AddCard(MakeCard(_nduCheckBox, nduDescriptionLabel, _nduStateLabel, applyNduButton));
+        AddCard(MakeCard(UiTheme.Impact.AntiStutter, _nduCheckBox, nduDescriptionLabel, _nduStateLabel, applyNduButton));
 
         AddHeader(edgeLabel);
-        AddCard(MakeCard(_edgeStartupBoostCheckBox, edgeDescriptionLabel, _edgeStateLabel, applyEdgeButton));
+        AddCard(MakeCard(UiTheme.Impact.Background, _edgeStartupBoostCheckBox, edgeDescriptionLabel, _edgeStateLabel, applyEdgeButton));
 
         AddHeader(stabilityLabel, "Сеть");
         AsCardTitle(repairNetworkLabel);
-        AddCard(MakeCard(repairNetworkLabel, repairNetworkDescriptionLabel, repairNetworkButton));
+        AddCard(MakeCard(UiTheme.Impact.AntiStutter, repairNetworkLabel, repairNetworkDescriptionLabel, repairNetworkButton));
         AsCardTitle(restartAdaptersLabel);
-        AddCard(MakeCard(restartAdaptersLabel, restartAdaptersDescriptionLabel, restartAdaptersButton));
-        AddCard(MakeCard(_dhcpMediaSenseCheckBox, dhcpMediaSenseDescriptionLabel, _dhcpMediaSenseStateLabel, applyDhcpMediaSenseButton));
-        AddCard(MakeCard(_googleDnsCheckBox, googleDnsDescriptionLabel, _googleDnsStateLabel, applyGoogleDnsButton));
-        AddCard(MakeCard(_disableIpv6CheckBox, ipv6DescriptionLabel, _ipv6StateLabel, applyIpv6Button));
+        AddCard(MakeCard(UiTheme.Impact.AntiStutter, restartAdaptersLabel, restartAdaptersDescriptionLabel, restartAdaptersButton));
+        AddCard(MakeCard(UiTheme.Impact.AntiStutter, _dhcpMediaSenseCheckBox, dhcpMediaSenseDescriptionLabel, _dhcpMediaSenseStateLabel, applyDhcpMediaSenseButton));
+        AddCard(MakeCard(UiTheme.Impact.AntiStutter, _googleDnsCheckBox, googleDnsDescriptionLabel, _googleDnsStateLabel, applyGoogleDnsButton));
+        AddCard(MakeCard(UiTheme.Impact.AntiStutter, _disableIpv6CheckBox, ipv6DescriptionLabel, _ipv6StateLabel, applyIpv6Button));
 
         AddHeader(nvidiaOverlayLabel);
-        AddCard(MakeCard(_nvidiaOverlayRestartCheckBox, nvidiaOverlayDescriptionLabel, _nvidiaOverlayStateLabel, applyNvidiaOverlayButton));
+        AddCard(MakeCard(UiTheme.Impact.Background, _nvidiaOverlayRestartCheckBox, nvidiaOverlayDescriptionLabel, _nvidiaOverlayStateLabel, applyNvidiaOverlayButton));
         AsCardTitle(nvidiaOverlayPreLaunchLabel);
-        AddCard(MakeCard(nvidiaOverlayPreLaunchLabel, nvidiaOverlayPreLaunchDescriptionLabel, nvidiaOverlayLaunchChoicesPanel, nvidiaOverlayCustomProgramPanel, _nvidiaOverlayPreLaunchStateLabel, applyNvidiaOverlayPreLaunchButton));
+        AddCard(MakeCard(UiTheme.Impact.Background, nvidiaOverlayPreLaunchLabel, nvidiaOverlayPreLaunchDescriptionLabel, nvidiaOverlayLaunchChoicesPanel, nvidiaOverlayCustomProgramPanel, _nvidiaOverlayPreLaunchStateLabel, applyNvidiaOverlayPreLaunchButton));
 
         AddHeader(gamePriorityLabel);
-        AddCard(MakeCard(_gameRealtimePriorityCheckBox, gamePriorityDescriptionLabel, _gameRealtimePriorityStateLabel, applyGameRealtimePriorityButton));
+        AddCard(MakeCard(UiTheme.Impact.Fps, _gameRealtimePriorityCheckBox, gamePriorityDescriptionLabel, _gameRealtimePriorityStateLabel, applyGameRealtimePriorityButton));
 
         systemPage.Controls.Add(systemLayout);
 
@@ -994,17 +1013,24 @@ public partial class WindowsTweaksTab : UserControl
         {
             var contentWidth = Math.Max(360, systemLayout.ClientSize.Width - systemLayout.Padding.Horizontal);
 
-            foreach (var (card, children) in systemCards)
+            foreach (var (card, children, badge) in systemCards)
             {
                 card.Width = contentWidth;
                 var innerWidth = contentWidth - 28;
+
+                // Маркер влияния — в правом верхнем углу карточки.
+                badge.Location = new Point(contentWidth - badge.Width - 14, 12);
+
                 var y = 12;
+                var first = true;
 
                 foreach (var child in children)
                 {
                     if (child is Label or CheckBox)
                     {
-                        child.MaximumSize = new Size(innerWidth, 0);
+                        // Заголовок карточки не должен залезать под маркер.
+                        var cap = first ? innerWidth - badge.Width - 12 : innerWidth;
+                        child.MaximumSize = new Size(Math.Max(120, cap), 0);
                     }
                     else if (child is FlowLayoutPanel flow)
                     {
@@ -1020,9 +1046,10 @@ public partial class WindowsTweaksTab : UserControl
 
                     child.Location = new Point(14, y);
                     y += child.Height + 8;
+                    first = false;
                 }
 
-                card.Height = y + 4;
+                card.Height = Math.Max(y + 4, badge.Bottom + 10);
             }
         }
 
@@ -1530,11 +1557,13 @@ public partial class WindowsTweaksTab : UserControl
                 BorderStyle = BorderStyle.None
             };
 
+            var badge = UiTheme.CreateImpactBadge(tweak.Impact);
+
             var checkBox = new CheckBox
             {
                 Text = tweak.Name,
                 Location = new Point(0, 4),
-                Size = new Size(rowWidth - 8, 25),
+                Size = new Size(Math.Max(200, rowWidth - badge.Width - 24), 25),
                 AutoSize = false,
                 UseMnemonic = false,
                 ForeColor = Color.White,
@@ -1554,9 +1583,12 @@ public partial class WindowsTweaksTab : UserControl
                 BackColor = Color.Transparent
             };
 
+            badge.Location = new Point(rowWidth - badge.Width - 12, 6);
+
             _gameTweakCheckBoxes[tweak] = checkBox;
             rowPanel.Controls.Add(checkBox);
             rowPanel.Controls.Add(descriptionLabel);
+            rowPanel.Controls.Add(badge);
             _gameTweaksPanel.Controls.Add(rowPanel);
             y += rowHeight + 6;
         }
@@ -2812,7 +2844,11 @@ public partial class WindowsTweaksTab : UserControl
         string Name,
         string Description,
         bool Recommended,
-        IReadOnlyList<RegistryGameValue> Values);
+        IReadOnlyList<RegistryGameValue> Values)
+    {
+        // Большинство игровых твиков — про FPS/задержку; исключения помечаются явно.
+        public UiTheme.Impact Impact { get; init; } = UiTheme.Impact.Fps;
+    }
 
     private sealed record PlannedGameTweakChange(RegistryGameTweak Tweak, bool Enable);
 

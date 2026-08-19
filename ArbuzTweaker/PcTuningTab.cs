@@ -367,35 +367,28 @@ public sealed class PcTuningTab : UserControl
             || tweak.Description.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string GetBadgeText(PcTuningImpact impact)
+    // Единый смысл маркеров со вкладками «Система» и «Игровой режим».
+    private static UiTheme.Impact ToImpact(PcTuningImpact impact) => impact switch
     {
-        return impact switch
-        {
-            PcTuningImpact.Measured => "влияет",
-            PcTuningImpact.Situational => "ситуативно",
-            _ => "не про FPS"
-        };
-    }
+        PcTuningImpact.Measured => UiTheme.Impact.Fps,
+        PcTuningImpact.Situational => UiTheme.Impact.AntiStutter,
+        _ => UiTheme.Impact.Background
+    };
 
-    private static Color GetBadgeForeColor(PcTuningImpact impact)
-    {
-        return impact switch
-        {
-            PcTuningImpact.Measured => Color.White,
-            PcTuningImpact.Situational => Color.White,
-            _ => UiTheme.TextDim
-        };
-    }
+    private static string GetBadgeText(PcTuningImpact impact) => UiTheme.ImpactText(ToImpact(impact));
 
-    private static Color GetBadgeBackColor(PcTuningImpact impact)
+    private static Color GetBadgeForeColor(PcTuningImpact impact) => impact switch
     {
-        return impact switch
-        {
-            PcTuningImpact.Measured => Color.FromArgb(0, 130, 70),
-            PcTuningImpact.Situational => Color.FromArgb(60, 90, 120),
-            _ => Color.FromArgb(48, 48, 48)
-        };
-    }
+        PcTuningImpact.NoPerformance => UiTheme.TextDim,
+        _ => Color.White
+    };
+
+    private static Color GetBadgeBackColor(PcTuningImpact impact) => impact switch
+    {
+        PcTuningImpact.Measured => Color.FromArgb(0, 130, 70),
+        PcTuningImpact.Situational => Color.FromArgb(60, 90, 120),
+        _ => Color.FromArgb(48, 48, 48)
+    };
 
     // Состояние читается в фоне: часть твиков опрашивает WMI через PowerShell,
     // а синхронный опрос подвешивал вкладку на несколько секунд при открытии.

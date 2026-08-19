@@ -230,11 +230,16 @@ internal static class UiTheme
         EventHandler checkedChanged,
         out CheckBox checkBox,
         object? tag = null,
-        bool highlighted = false)
+        bool highlighted = false,
+        Impact? impact = null)
     {
+        // Маркер влияния в правом верхнем углу; под него резервируем место, чтобы описание не налезало.
+        var badge = impact.HasValue ? CreateImpactBadge(impact.Value) : null;
+        var badgeReserve = badge != null ? badge.Width + 14 : 0;
+
         var checkBoxWidth = Math.Clamp((int)(availableWidth * 0.40), 240, 360);
         var descriptionX = checkBoxWidth + 24;
-        var descriptionWidth = Math.Max(220, availableWidth - checkBoxWidth - 36);
+        var descriptionWidth = Math.Max(180, availableWidth - checkBoxWidth - 36 - badgeReserve);
         var descriptionFont = ListDescriptionFont;
         var descriptionSize = TextRenderer.MeasureText(
             description,
@@ -282,6 +287,13 @@ internal static class UiTheme
 
         rowPanel.Controls.Add(checkBox);
         rowPanel.Controls.Add(descriptionLabel);
+
+        if (badge != null)
+        {
+            badge.Location = new Point(availableWidth - badge.Width - 12, 9);
+            rowPanel.Controls.Add(badge);
+        }
+
         panel.Controls.Add(rowPanel);
 
         return y + rowHeight + 6;
@@ -367,6 +379,58 @@ internal static class UiTheme
             AutoSize = true,
             UseMnemonic = false
         };
+    }
+
+    /// <summary>Честная оценка влияния твика — единый смысл маркеров на всех вкладках.</summary>
+    public enum Impact
+    {
+        /// <summary>Реально поднимает FPS / снижает задержку.</summary>
+        Fps,
+
+        /// <summary>Помогает против фризов, лагов и утечек — если проблема есть.</summary>
+        AntiStutter,
+
+        /// <summary>На FPS не влияет — фон, приватность, удобство.</summary>
+        Background
+    }
+
+    private static readonly Font BadgeFont = new("Segoe UI Semibold", 8.5F);
+
+    public static string ImpactText(Impact impact) => impact switch
+    {
+        Impact.Fps => "+FPS",
+        Impact.AntiStutter => "против фризов",
+        _ => "чистит фон"
+    };
+
+    /// <summary>Маркер-плашка с честной оценкой влияния твика. Одинаковый вид на всех вкладках Windows.</summary>
+    public static Label CreateImpactBadge(Impact impact)
+    {
+        var (fore, back) = impact switch
+        {
+            Impact.Fps => (Color.White, Color.FromArgb(0, 130, 70)),
+            Impact.AntiStutter => (Color.White, Color.FromArgb(60, 90, 120)),
+            _ => (TextDim, Color.FromArgb(48, 48, 48))
+        };
+
+        var badge = new Label
+        {
+            Text = ImpactText(impact),
+            AutoSize = true,
+            Font = BadgeFont,
+            ForeColor = fore,
+            BackColor = back,
+            Padding = new Padding(8, 3, 8, 3),
+            TextAlign = ContentAlignment.MiddleCenter,
+            UseMnemonic = false,
+            Margin = new Padding(0)
+        };
+
+        // Фиксируем размер сразу, чтобы badge.Width был надёжен ещё до добавления в контейнер
+        // (иначе позиционирование по правому краю обрезало более широкие плашки).
+        badge.Size = badge.PreferredSize;
+        badge.AutoSize = false;
+        return badge;
     }
 
     public static async Task RunButtonOperationAsync(object? sender, Func<Task> operation)
