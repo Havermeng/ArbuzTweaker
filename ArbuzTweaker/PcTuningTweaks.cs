@@ -17,7 +17,10 @@ public enum PcTuningCategory
     Stability,
 
     /// <summary>Приватность и чистота фона. На производительность не влияет.</summary>
-    Privacy
+    Privacy,
+
+    /// <summary>Даёт прирост, но снижает защиту системы или конфликтует с анти-читами.</summary>
+    Risky
 }
 
 /// <summary>Честная оценка влияния — показывается пользователю, чтобы не выдавать приватность за FPS.</summary>
@@ -91,7 +94,10 @@ public enum PcTuningAction
     DevicePowerSaving,
 
     /// <summary>NetBIOS over TCP/IP по всем интерфейсам.</summary>
-    NetBios
+    NetBios,
+
+    /// <summary>DisableDynamicPstate=1 у всех видеокарт NVIDIA (подключ Class выбирается автоматически).</summary>
+    NvidiaPState
 }
 
 public sealed record PcTuningTweak(
@@ -487,6 +493,72 @@ public static class PcTuningCatalog
             new[]
             {
                 PcTuningValue.User(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "HideFileExt", 0, 1)
+            }),
+
+        // ───────────── Даёт прирост, но снижает защиту / трогает анти-читы ─────────────
+        new PcTuningTweak(
+            "nvidia-pstate-0",
+            "NVIDIA: фиксировать P-State 0 (макс. частота GPU)",
+            "Запрещает видеокарте NVIDIA сбрасывать частоты в лёгких сценах (DisableDynamicPstate). Стабильнее фреймтайм там, где GPU иначе засыпал бы. Нужный подключ драйвера выбирается автоматически.",
+            PcTuningCategory.Risky,
+            PcTuningImpact.Situational,
+            Array.Empty<PcTuningValue>())
+        {
+            Action = PcTuningAction.NvidiaPState,
+            RequiresReboot = true,
+            Warning = "Выше температура и потребление GPU в простое. Только для видеокарт NVIDIA."
+        },
+
+        new PcTuningTweak(
+            "memory-integrity-off",
+            "Отключить Memory Integrity (HVCI)",
+            "Снимает аппаратную проверку целостности кода на уровне виртуализации — единственный твик из группы с подтверждённым замерами приростом FPS в CPU-сценах. Для Dota 2 и SCP:SL по анти-читам безопасно.",
+            PcTuningCategory.Risky,
+            PcTuningImpact.Measured,
+            new[]
+            {
+                PcTuningValue.Machine(
+                    @"SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity",
+                    "Enabled",
+                    0,
+                    1)
             })
+        {
+            RequiresReboot = true,
+            Warning = "Снижает защиту системы. Требуют включённым Valorant/Vanguard и FACEIT — там игра не запустится. Может включиться обратно, если в BIOS включена виртуализация."
+        },
+
+        new PcTuningTweak(
+            "vbs-off",
+            "Отключить Virtualization Based Security (VBS)",
+            "Отключает слой виртуализации безопасности — тот же оверхед, что и у Memory Integrity. Прирост FPS там, где VBS был активен.",
+            PcTuningCategory.Risky,
+            PcTuningImpact.Measured,
+            new[]
+            {
+                PcTuningValue.Machine(@"SYSTEM\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity", 0, 1)
+            })
+        {
+            RequiresReboot = true,
+            Warning = "Снижает защиту системы и ломает WSL/песочницу Windows. Не отключится, пока включены Hyper-V, Memory Integrity или платформа виртуальных машин."
+        },
+
+        new PcTuningTweak(
+            "defender-realtime-off",
+            "Отключить защиту в реальном времени Defender",
+            "Ставит политики, отключающие постоянное сканирование Windows Defender. Убирает реальный оверхед CPU/диска при загрузке карт, распаковке и записи реплеев на слабых процессорах.",
+            PcTuningCategory.Risky,
+            PcTuningImpact.Measured,
+            new[]
+            {
+                PcTuningValue.Machine(@"SOFTWARE\Policies\Microsoft\Windows Defender", "DisableAntiSpyware", 1, null),
+                PcTuningValue.Machine(@"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection", "DisableRealtimeMonitoring", 1, null),
+                PcTuningValue.Machine(@"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection", "DisableBehaviorMonitoring", 1, null),
+                PcTuningValue.Machine(@"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection", "DisableScanOnRealtimeEnable", 1, null),
+                PcTuningValue.Machine(@"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection", "DisableOnAccessProtection", 1, null)
+            })
+        {
+            Warning = "Оставляет систему без антивируса. Сработает только при выключенной Tamper Protection (её нужно снять вручную в «Безопасность Windows»). Windows может вернуть защиту при обновлении."
+        }
     };
 }

@@ -17,6 +17,7 @@ public sealed class PcTuningService
     private const string BackupGroup = "PC-Tuning";
     private const string HibernatePowerKeyPath = @"SYSTEM\CurrentControlSet\Control\Power";
     private const string NetBtInterfacesKeyPath = @"SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces";
+    private const string DisplayClassKeyPath = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
     private const int ProcessTimeoutMilliseconds = 60000;
 
     private readonly RegistryBackupService? _backupService;
@@ -61,6 +62,7 @@ public sealed class PcTuningService
                 PcTuningAction.Hibernation => IsHibernationDisabled(),
                 PcTuningAction.DevicePowerSaving => IsDevicePowerSavingDisabled(),
                 PcTuningAction.NetBios => IsNetBiosDisabled(),
+                PcTuningAction.NvidiaPState => IsNvidiaPStateDisabled(),
                 _ => AreRegistryValuesApplied(tweak)
             };
         }
@@ -83,6 +85,8 @@ public sealed class PcTuningService
                     return await SetDevicePowerSavingAsync(enable);
                 case PcTuningAction.NetBios:
                     return await Task.Run(() => SetNetBios(enable));
+                case PcTuningAction.NvidiaPState:
+                    return await Task.Run(() => SetNvidiaPState(enable));
                 default:
                     return await Task.Run(() => ApplyRegistryValues(tweak, enable));
             }
@@ -239,6 +243,91 @@ public sealed class PcTuningService
         }
 
         return !failed;
+    }
+
+    // ───────────── NVIDIA P-State ─────────────
+
+    private bool IsNvidiaPStateDisabled()
+    {
+        var subKeys = GetNvidiaClassSubKeys();
+        if (subKeys.Count == 0)
+            return false;
+
+        foreach (var subKeyPath in subKeys)
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(subKeyPath, false);
+            if (key?.GetValue("DisableDynamicPstate") is not int value || value != 1)
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool SetNvidiaPState(bool disable)
+    {
+        var subKeys = GetNvidiaClassSubKeys();
+        if (subKeys.Count == 0)
+            return false;
+
+        var failed = false;
+
+        foreach (var subKeyPath in subKeys)
+        {
+            try
+            {
+                _backupService?.CaptureValue(BackupGroup, "HKLM", subKeyPath, "DisableDynamicPstate");
+
+                using var key = Registry.LocalMachine.OpenSubKey(subKeyPath, true);
+                if (key == null)
+                {
+                    failed = true;
+                    continue;
+                }
+
+                if (disable)
+                    key.SetValue("DisableDynamicPstate", 1, RegistryValueKind.DWord);
+                else if (key.GetValue("DisableDynamicPstate") != null)
+                    key.DeleteValue("DisableDynamicPstate", false); // По умолчанию параметра нет — откат = удаление.
+            }
+            catch (Exception ex)
+            {
+                failed = true;
+                _logService?.Error($"Failed to set DisableDynamicPstate for {subKeyPath}", ex);
+            }
+        }
+
+        return !failed;
+    }
+
+    /// <summary>Пути подключей класса «Display adapters», принадлежащих видеокартам NVIDIA.</summary>
+    private static List<string> GetNvidiaClassSubKeys()
+    {
+        var result = new List<string>();
+        using var classKey = Registry.LocalMachine.OpenSubKey(DisplayClassKeyPath, false);
+        if (classKey == null)
+            return result;
+
+        foreach (var subKeyName in classKey.GetSubKeyNames())
+        {
+            // Только числовые подключи вида 0000/0001 — остальное (Properties и т.п.) пропускаем.
+            if (subKeyName.Length != 4 || !subKeyName.All(char.IsDigit))
+                continue;
+
+            using var subKey = classKey.OpenSubKey(subKeyName, false);
+            if (subKey == null)
+                continue;
+
+            var provider = subKey.GetValue("ProviderName") as string ?? string.Empty;
+            var matchingId = subKey.GetValue("MatchingDeviceId") as string ?? string.Empty;
+
+            if (provider.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase)
+                || matchingId.Contains("VEN_10DE", StringComparison.OrdinalIgnoreCase))
+            {
+                result.Add(DisplayClassKeyPath + "\\" + subKeyName);
+            }
+        }
+
+        return result;
     }
 
     // ───────────── Запуск процессов ─────────────

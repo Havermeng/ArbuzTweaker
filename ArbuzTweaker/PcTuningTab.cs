@@ -176,7 +176,7 @@ public sealed class PcTuningTab : UserControl
         var y = 6;
         var supportedTweaks = _service.GetSupportedTweaks();
 
-        foreach (var category in new[] { PcTuningCategory.Latency, PcTuningCategory.Stability, PcTuningCategory.Privacy })
+        foreach (var category in new[] { PcTuningCategory.Latency, PcTuningCategory.Stability, PcTuningCategory.Privacy, PcTuningCategory.Risky })
         {
             var tweaks = supportedTweaks
                 .Where(tweak => tweak.Category == category)
@@ -207,7 +207,8 @@ public sealed class PcTuningTab : UserControl
         {
             PcTuningCategory.Latency => ("Задержки и производительность", "Влияют на плавность и отзывчивость в играх"),
             PcTuningCategory.Stability => ("Фризы и фоновая активность", "Убирают внезапные подтормаживания, а не поднимают средний FPS"),
-            _ => ("Приватность и чистый фон", "На производительность не влияют")
+            PcTuningCategory.Privacy => ("Приватность и чистый фон", "На производительность не влияют"),
+            _ => ("Рискованные: прирост ценой защиты", "Дают FPS, но снижают безопасность или конфликтуют с анти-читами — читайте предупреждения")
         };
 
         var header = new Label
@@ -217,7 +218,7 @@ public sealed class PcTuningTab : UserControl
             Size = new Size(width - 16, 24),
             AutoSize = false,
             Font = HeaderFont,
-            ForeColor = UiTheme.AccentGreen,
+            ForeColor = category == PcTuningCategory.Risky ? Color.Orange : UiTheme.AccentGreen,
             BackColor = Color.Transparent
         };
 
