@@ -5,8 +5,7 @@ using Microsoft.Win32;
 namespace ArbuzTweaker;
 
 /// <summary>
-/// Твики из гайда PC-Tuning (github.com/valleyofdoom/PC-Tuning), адаптированные под твикер.
-/// В отличие от оригинала каждый твик обратим: прежние значения уходят в бэкап реестра.
+/// Каталог твиков оптимизации Windows. Каждый твик обратим: прежние значения уходят в бэкап реестра.
 /// </summary>
 public enum PcTuningCategory
 {
@@ -26,7 +25,7 @@ public enum PcTuningCategory
 /// <summary>Честная оценка влияния — показывается пользователю, чтобы не выдавать приватность за FPS.</summary>
 public enum PcTuningImpact
 {
-    /// <summary>Влияние подтверждено измерениями автора гайда.</summary>
+    /// <summary>Влияние на производительность подтверждено измерениями.</summary>
     Measured,
 
     /// <summary>Помогает только если проблема есть (микрофризы, засыпание устройств).</summary>
@@ -176,7 +175,7 @@ public static class PcTuningCatalog
         new PcTuningTweak(
             "gamebar-presence-writer",
             "Отключить GameBarPresenceWriter",
-            "Убирает постоянно висящий фоновый процесс GameBarPresenceWriter. На сам Game Mode и запись игр не влияет — это проверено автором гайда отдельно.",
+            "Убирает постоянно висящий фоновый процесс GameBarPresenceWriter. На сам Game Mode и запись игр не влияет.",
             PcTuningCategory.Latency,
             PcTuningImpact.Situational,
             new[]
@@ -191,7 +190,7 @@ public static class PcTuningCatalog
         new PcTuningTweak(
             "transparency-effects",
             "Отключить эффекты прозрачности",
-            "Прозрачность интерфейса стоит небольшого, но измеримого времени CPU — у автора гайда есть замер. Заодно интерфейс становится отзывчивее.",
+            "Прозрачность интерфейса стоит небольшого, но измеримого времени CPU. Заодно интерфейс становится отзывчивее.",
             PcTuningCategory.Latency,
             PcTuningImpact.Measured,
             new[]

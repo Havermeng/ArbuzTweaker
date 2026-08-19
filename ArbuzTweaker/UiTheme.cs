@@ -243,16 +243,14 @@ internal static class UiTheme
             TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
         var rowHeight = Math.Max(42, descriptionSize.Height + 18);
 
+        // Единый вид карточки со вкладками «Система» и «Оптимизация»: тёмная подложка без рамки,
+        // выделение поиска — синеватым. Чередование строк убрано намеренно.
         var rowPanel = new Panel
         {
             Location = new Point(8, y),
             Size = new Size(availableWidth, rowHeight),
-            BackColor = highlighted
-                ? Color.FromArgb(45, 70, 90)
-                : rowIndex % 2 == 0
-                    ? Color.FromArgb(38, 38, 38)
-                    : Color.FromArgb(32, 32, 32),
-            BorderStyle = BorderStyle.FixedSingle
+            BackColor = highlighted ? Color.FromArgb(45, 70, 90) : SurfaceAlt,
+            BorderStyle = BorderStyle.None
         };
 
         checkBox = new CheckBox
@@ -326,6 +324,48 @@ internal static class UiTheme
             ForeColor = TextPrimary,
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 10)
+        };
+    }
+
+    private static readonly Font SectionHeaderLabelFont = new("Segoe UI Semibold", 11F, FontStyle.Regular);
+    private static readonly Font CardTitleFont = new("Segoe UI Semibold", 10F, FontStyle.Regular);
+
+    /// <summary>Заголовок секции (акцентно-зелёный) для потоковых раскладок — единый вид на всех вкладках.</summary>
+    public static Label CreateSectionHeaderLabel(string text)
+    {
+        return new Label
+        {
+            Text = text,
+            Font = SectionHeaderLabelFont,
+            ForeColor = AccentGreen,
+            AutoSize = true,
+            UseMnemonic = false,
+            Margin = new Padding(2, 12, 0, 6)
+        };
+    }
+
+    /// <summary>Карточка твика (тёмная подложка) — единый контейнер для пунктов на вкладках Windows.</summary>
+    public static Panel CreateCard()
+    {
+        return new Panel
+        {
+            BackColor = SurfaceAlt,
+            Margin = new Padding(0, 0, 0, 12),
+            Padding = new Padding(0),
+            BorderStyle = BorderStyle.None
+        };
+    }
+
+    /// <summary>Заголовок внутри карточки (для пунктов без чекбокса — действия вроде «восстановить сеть»).</summary>
+    public static Label CreateCardTitle(string text)
+    {
+        return new Label
+        {
+            Text = text,
+            Font = CardTitleFont,
+            ForeColor = TextPrimary,
+            AutoSize = true,
+            UseMnemonic = false
         };
     }
 

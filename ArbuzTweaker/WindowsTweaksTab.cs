@@ -179,12 +179,12 @@ public partial class WindowsTweaksTab : UserControl
             }),
         new(
             "[Экспериментально] Низкая задержка Win32-презентации",
-            "Пункт из отчёта Platinum: включает Win32LowLatencyPresentationEnabled для текущего пользователя. Может влиять на задержку в оконном и безрамочном режиме.",
+            "Включает Win32LowLatencyPresentationEnabled для текущего пользователя. Может снижать задержку в оконном и безрамочном режиме.",
             false,
             new[] { RegistryGameValue.CurrentUser(@"System\GameConfigStore", "Win32LowLatencyPresentationEnabled", 1, null) }),
         new(
             "[Экспериментально] Профиль MMCSS для игр",
-            "Пункт из отчёта Platinum: выставляет высокий профиль Tasks\\Games для Multimedia Class Scheduler. Может помочь с приоритетом игр, но эффект зависит от системы.",
+            "Выставляет высокий профиль Tasks\\Games для планировщика мультимедиа (MMCSS). Может помочь приоритету игр, но эффект зависит от системы.",
             false,
             new[]
             {
@@ -200,17 +200,17 @@ public partial class WindowsTweaksTab : UserControl
             }),
         new(
             "[Экспериментально] Глобальные запросы таймера",
-            "Пункт из отчёта Platinum: разрешает GlobalTimerResolutionRequests в ядре Windows. Иногда снижает микрозадержки, но может увеличить расход батареи.",
+            "Разрешает GlobalTimerResolutionRequests в ядре Windows. Иногда снижает микрозадержки, но может увеличить расход батареи.",
             false,
             new[] { RegistryGameValue.LocalMachine(@"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "GlobalTimerResolutionRequests", 1, 0) }),
         new(
             "[Экспериментально] Распределение таймеров ядра",
-            "Пункт из отчёта Platinum: включает DistributeTimers. Это не разгон и не отключение защиты, но проверять стоит только отдельно от других твиков.",
+            "Включает DistributeTimers — распределение таймеров ядра по ядрам процессора. Не разгон и не отключение защиты, но проверять стоит отдельно от других твиков.",
             false,
             new[] { RegistryGameValue.LocalMachine(@"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "DistributeTimers", 1, 0) }),
         new(
             "[Экспериментально] Очередь кадров DWM",
-            "Пункт из отчёта Platinum: ставит MaxQueuedBuffers=2 для DWM. Может повлиять на задержку в оконном/безрамочном режиме, эффект зависит от драйвера.",
+            "Ставит MaxQueuedBuffers=2 для DWM. Может повлиять на задержку в оконном и безрамочном режиме, эффект зависит от драйвера.",
             false,
             new[] { RegistryGameValue.CurrentUser(@"Software\Microsoft\Windows\DWM", "MaxQueuedBuffers", 2, null) }),
         new(
@@ -883,10 +883,46 @@ public partial class WindowsTweaksTab : UserControl
             BackColor = UiTheme.Surface
         };
 
-        void AddSystemControl(Control control, int bottomMargin = 10)
+        var systemCards = new List<(Panel Card, Control[] Children)>();
+
+        // Каждый твик — карточка на тёмной подложке (единый вид с вкладками «Игровой режим» и «Оптимизация»).
+        Panel MakeCard(params Control[] children)
+        {
+            var card = UiTheme.CreateCard();
+            foreach (var child in children)
+                card.Controls.Add(child);
+            systemCards.Add((card, children));
+            return card;
+        }
+
+        void AddIntro(Control control, int bottomMargin)
         {
             control.Margin = new Padding(0, 0, 0, bottomMargin);
             systemLayout.Controls.Add(control);
+        }
+
+        void AddHeader(Label label, string? text = null)
+        {
+            if (text != null)
+                label.Text = text;
+            label.ForeColor = UiTheme.AccentGreen;
+            label.Font = new Font("Segoe UI Semibold", 11F);
+            label.AutoSize = true;
+            label.Margin = new Padding(2, 12, 0, 6);
+            systemLayout.Controls.Add(label);
+        }
+
+        void AddCard(Panel card)
+        {
+            card.Margin = new Padding(0, 0, 0, 12);
+            systemLayout.Controls.Add(card);
+        }
+
+        void AsCardTitle(Label label)
+        {
+            label.ForeColor = UiTheme.TextPrimary;
+            label.Font = new Font("Segoe UI Semibold", 10F);
+            label.AutoSize = true;
         }
 
         var nvidiaOverlayLaunchChoicesPanel = new FlowLayoutPanel
@@ -919,90 +955,79 @@ public partial class WindowsTweaksTab : UserControl
         nvidiaOverlayCustomProgramPanel.Controls.Add(_nvidiaOverlayCustomProgramTextBox);
         nvidiaOverlayCustomProgramPanel.Controls.Add(browseNvidiaOverlayCustomProgramButton);
 
-        AddSystemControl(titleLabel, 8);
-        AddSystemControl(infoLabel, 10);
-        AddSystemControl(adminStatusLabel, 26);
-        AddSystemControl(graphicsLabel, 8);
-        AddSystemControl(_mpoDisabledCheckBox, 6);
-        AddSystemControl(mpoDescriptionLabel, 6);
-        AddSystemControl(_mpoStateLabel, 8);
-        AddSystemControl(applyMpoButton, 28);
-        AddSystemControl(memoryLabel, 8);
-        AddSystemControl(_nduCheckBox, 6);
-        AddSystemControl(nduDescriptionLabel, 6);
-        AddSystemControl(_nduStateLabel, 8);
-        AddSystemControl(applyNduButton, 28);
-        AddSystemControl(edgeLabel, 8);
-        AddSystemControl(_edgeStartupBoostCheckBox, 6);
-        AddSystemControl(edgeDescriptionLabel, 6);
-        AddSystemControl(_edgeStateLabel, 8);
-        AddSystemControl(applyEdgeButton, 28);
-        AddSystemControl(repairNetworkLabel, 8);
-        AddSystemControl(repairNetworkDescriptionLabel, 8);
-        AddSystemControl(repairNetworkButton, 28);
-        AddSystemControl(restartAdaptersLabel, 8);
-        AddSystemControl(restartAdaptersDescriptionLabel, 8);
-        AddSystemControl(restartAdaptersButton, 28);
-        AddSystemControl(stabilityLabel, 8);
-        AddSystemControl(_dhcpMediaSenseCheckBox, 6);
-        AddSystemControl(dhcpMediaSenseDescriptionLabel, 8);
-        AddSystemControl(_dhcpMediaSenseStateLabel, 8);
-        AddSystemControl(applyDhcpMediaSenseButton, 28);
-        AddSystemControl(_googleDnsCheckBox, 6);
-        AddSystemControl(googleDnsDescriptionLabel, 8);
-        AddSystemControl(_googleDnsStateLabel, 8);
-        AddSystemControl(applyGoogleDnsButton, 28);
-        AddSystemControl(_disableIpv6CheckBox, 6);
-        AddSystemControl(ipv6DescriptionLabel, 8);
-        AddSystemControl(_ipv6StateLabel, 8);
-        AddSystemControl(applyIpv6Button, 28);
-        AddSystemControl(nvidiaOverlayLabel, 8);
-        AddSystemControl(_nvidiaOverlayRestartCheckBox, 6);
-        AddSystemControl(nvidiaOverlayDescriptionLabel, 8);
-        AddSystemControl(_nvidiaOverlayStateLabel, 8);
-        AddSystemControl(applyNvidiaOverlayButton, 28);
-        AddSystemControl(nvidiaOverlayPreLaunchLabel, 8);
-        AddSystemControl(nvidiaOverlayPreLaunchDescriptionLabel, 8);
-        AddSystemControl(nvidiaOverlayLaunchChoicesPanel, 0);
-        AddSystemControl(nvidiaOverlayCustomProgramPanel, 8);
-        AddSystemControl(_nvidiaOverlayPreLaunchStateLabel, 8);
-        AddSystemControl(applyNvidiaOverlayPreLaunchButton, 28);
-        AddSystemControl(gamePriorityLabel, 8);
-        AddSystemControl(_gameRealtimePriorityCheckBox, 6);
-        AddSystemControl(gamePriorityDescriptionLabel, 8);
-        AddSystemControl(_gameRealtimePriorityStateLabel, 8);
-        AddSystemControl(applyGameRealtimePriorityButton, 0);
+        AddIntro(titleLabel, 8);
+        AddIntro(infoLabel, 10);
+        AddIntro(adminStatusLabel, 6);
+
+        AddHeader(graphicsLabel);
+        AddCard(MakeCard(_mpoDisabledCheckBox, mpoDescriptionLabel, _mpoStateLabel, applyMpoButton));
+
+        AddHeader(memoryLabel);
+        AddCard(MakeCard(_nduCheckBox, nduDescriptionLabel, _nduStateLabel, applyNduButton));
+
+        AddHeader(edgeLabel);
+        AddCard(MakeCard(_edgeStartupBoostCheckBox, edgeDescriptionLabel, _edgeStateLabel, applyEdgeButton));
+
+        AddHeader(stabilityLabel, "Сеть");
+        AsCardTitle(repairNetworkLabel);
+        AddCard(MakeCard(repairNetworkLabel, repairNetworkDescriptionLabel, repairNetworkButton));
+        AsCardTitle(restartAdaptersLabel);
+        AddCard(MakeCard(restartAdaptersLabel, restartAdaptersDescriptionLabel, restartAdaptersButton));
+        AddCard(MakeCard(_dhcpMediaSenseCheckBox, dhcpMediaSenseDescriptionLabel, _dhcpMediaSenseStateLabel, applyDhcpMediaSenseButton));
+        AddCard(MakeCard(_googleDnsCheckBox, googleDnsDescriptionLabel, _googleDnsStateLabel, applyGoogleDnsButton));
+        AddCard(MakeCard(_disableIpv6CheckBox, ipv6DescriptionLabel, _ipv6StateLabel, applyIpv6Button));
+
+        AddHeader(nvidiaOverlayLabel);
+        AddCard(MakeCard(_nvidiaOverlayRestartCheckBox, nvidiaOverlayDescriptionLabel, _nvidiaOverlayStateLabel, applyNvidiaOverlayButton));
+        AsCardTitle(nvidiaOverlayPreLaunchLabel);
+        AddCard(MakeCard(nvidiaOverlayPreLaunchLabel, nvidiaOverlayPreLaunchDescriptionLabel, nvidiaOverlayLaunchChoicesPanel, nvidiaOverlayCustomProgramPanel, _nvidiaOverlayPreLaunchStateLabel, applyNvidiaOverlayPreLaunchButton));
+
+        AddHeader(gamePriorityLabel);
+        AddCard(MakeCard(_gameRealtimePriorityCheckBox, gamePriorityDescriptionLabel, _gameRealtimePriorityStateLabel, applyGameRealtimePriorityButton));
+
         systemPage.Controls.Add(systemLayout);
 
-        UiTheme.EnableDynamicLabelWrap(
-            systemLayout,
-            infoLabel,
-            mpoDescriptionLabel,
-            nduDescriptionLabel,
-            edgeDescriptionLabel,
-            repairNetworkDescriptionLabel,
-            restartAdaptersDescriptionLabel,
-            dhcpMediaSenseDescriptionLabel,
-            googleDnsDescriptionLabel,
-            ipv6DescriptionLabel,
-            _nvidiaOverlayRestartCheckBox,
-            nvidiaOverlayDescriptionLabel,
-            _nvidiaOverlayStateLabel,
-            nvidiaOverlayPreLaunchDescriptionLabel,
-            _nvidiaOverlayPreLaunchStateLabel,
-            nvidiaOverlayLaunchChoicesPanel,
-            nvidiaOverlayCustomProgramPanel,
-            _gameRealtimePriorityCheckBox,
-            gamePriorityDescriptionLabel,
-            _gameRealtimePriorityStateLabel);
+        // Интро-подписи переносятся по ширине; внутри карточек ширину и высоту считаем вручную.
+        UiTheme.EnableDynamicLabelWrap(systemLayout, infoLabel, adminStatusLabel);
 
-        systemLayout.SizeChanged += (s, e) =>
+        void LayoutSystemCards()
         {
-            var availableWidth = Math.Max(360, systemLayout.ClientSize.Width - systemLayout.Padding.Horizontal - 8);
-            _nvidiaOverlayCustomProgramTextBox.Width = Math.Max(
-                220,
-                availableWidth - browseNvidiaOverlayCustomProgramButton.Width - _nvidiaOverlayCustomProgramTextBox.Margin.Horizontal - 8);
-        };
+            var contentWidth = Math.Max(360, systemLayout.ClientSize.Width - systemLayout.Padding.Horizontal);
+
+            foreach (var (card, children) in systemCards)
+            {
+                card.Width = contentWidth;
+                var innerWidth = contentWidth - 28;
+                var y = 12;
+
+                foreach (var child in children)
+                {
+                    if (child is Label or CheckBox)
+                    {
+                        child.MaximumSize = new Size(innerWidth, 0);
+                    }
+                    else if (child is FlowLayoutPanel flow)
+                    {
+                        flow.MaximumSize = new Size(innerWidth, 0);
+                        if (ReferenceEquals(child, nvidiaOverlayCustomProgramPanel))
+                        {
+                            _nvidiaOverlayCustomProgramTextBox.Width = Math.Max(
+                                220,
+                                innerWidth - browseNvidiaOverlayCustomProgramButton.Width
+                                    - _nvidiaOverlayCustomProgramTextBox.Margin.Horizontal - 6);
+                        }
+                    }
+
+                    child.Location = new Point(14, y);
+                    y += child.Height + 8;
+                }
+
+                card.Height = y + 4;
+            }
+        }
+
+        systemLayout.SizeChanged += (s, e) => LayoutSystemCards();
+        LayoutSystemCards();
 
         gameModePage.Controls.Add(gameModeLabel);
         gameModePage.Controls.Add(gameModeDescriptionLabel);
