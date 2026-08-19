@@ -72,6 +72,7 @@ public partial class Form1 : Form
         BackColor = UiTheme.WindowBackground;
         ForeColor = UiTheme.TextPrimary;
         Font = new Font("Segoe UI", 10);
+        DoubleBuffered = true; // меньше мерцания при сворачивании/разворачивании и ресайзе
 
         var titlePanel = new Panel
         {
@@ -202,6 +203,11 @@ public partial class Form1 : Form
         if (_sidebarPanel == null)
             return;
 
+        // В свёрнутом окне ClientSize вырождается — не пересчитываем раскладку,
+        // иначе при разворачивании всё моргает и перестраивается заново.
+        if (WindowState == FormWindowState.Minimized)
+            return;
+
         _sidebarPanel.Width = ClientSize.Width < 1120 ? CompactSidebarWidth : ExpandedSidebarWidth;
         LayoutSidebarButtons();
     }
@@ -233,6 +239,7 @@ public partial class Form1 : Form
         AddTab("Функции", new FunctionsTab(_logService));
         AddTab("Стороннее ПО", new ThirdPartyToolsTab(_nvidiaInspectorService, _msiAfterburnerService, _intelXtuService));
         AddTab("Настройки", new SettingsTab(_appSettingsService, _updateService, _fileBackupService, _registryBackupService, _profileService, _logService, ResetWarningChoices));
+        AddTab("Гайд", new GuideTab());
     }
 
     private bool _dotaWarningShown = false;

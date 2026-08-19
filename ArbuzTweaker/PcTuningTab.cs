@@ -109,6 +109,7 @@ public sealed class PcTuningTab : UserControl
             Margin = new Padding(0, 0, 0, 10)
         };
         UiTheme.StyleListPanel(_listPanel);
+        UiTheme.EnableDoubleBuffering(_listPanel);
         _listPanel.Resize += (s, e) =>
         {
             // Пересобираем только при реальной смене ширины: иначе список моргает на каждый Resize.
@@ -165,6 +166,11 @@ public sealed class PcTuningTab : UserControl
     private void PopulateList()
     {
         if (_listPanel == null)
+            return;
+
+        // В свёрнутом окне ширина вырождается — не пересобираем список (и не портим _lastListWidth),
+        // тогда разворачивание не пересобирает его заново и не сбрасывает прокрутку.
+        if (FindForm() is { WindowState: FormWindowState.Minimized })
             return;
 
         _checkBoxes.Clear();

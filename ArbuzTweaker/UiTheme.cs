@@ -130,6 +130,14 @@ internal static class UiTheme
         panel.BackColor = Surface;
     }
 
+    /// <summary>Включает двойную буферизацию у панели — убирает мерцание при ресайзе/сворачивании.</summary>
+    public static void EnableDoubleBuffering(Control control)
+    {
+        typeof(Control)
+            .GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?.SetValue(control, true, null);
+    }
+
     public static void ClearAndDisposeControls(Control container)
     {
         var oldControls = new Control[container.Controls.Count];
@@ -511,6 +519,9 @@ internal static class UiTheme
             case "Настройки":
                 DrawGearIcon(graphics);
                 break;
+            case "Гайд":
+                DrawGuideIcon(graphics);
+                break;
             default:
                 DrawDotIcon(graphics);
                 break;
@@ -719,6 +730,22 @@ internal static class UiTheme
         }
 
         g.FillEllipse(brush, centerX - 6.3F, centerY - 6.3F, 12.6F, 12.6F);
+    }
+
+    private static void DrawGuideIcon(Graphics g)
+    {
+        // Открытая книга/руководство.
+        using var pageBrush = new SolidBrush(Color.FromArgb(230, 230, 230));
+        using var linePen = new Pen(Color.FromArgb(120, 130, 140), 1F);
+        using var spinePen = new Pen(Color.FromArgb(76, 176, 255), 1.4F);
+
+        g.FillPolygon(pageBrush, new[] { new PointF(2.5F, 4F), new PointF(8.5F, 5.5F), new PointF(8.5F, 15F), new PointF(2.5F, 13.5F) });
+        g.FillPolygon(pageBrush, new[] { new PointF(15.5F, 4F), new PointF(9.5F, 5.5F), new PointF(9.5F, 15F), new PointF(15.5F, 13.5F) });
+        g.DrawLine(spinePen, 9F, 5.4F, 9F, 15F);
+        g.DrawLine(linePen, 4F, 7F, 7.5F, 7.8F);
+        g.DrawLine(linePen, 4F, 9F, 7.5F, 9.8F);
+        g.DrawLine(linePen, 10.5F, 7.8F, 14F, 7F);
+        g.DrawLine(linePen, 10.5F, 9.8F, 14F, 9F);
     }
 
     private static void DrawDotIcon(Graphics g)

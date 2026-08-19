@@ -873,6 +873,7 @@ public partial class WindowsTweaksTab : UserControl
             BorderStyle = BorderStyle.None,
             BackColor = UiTheme.Surface
         };
+        UiTheme.EnableDoubleBuffering(_gameTweaksPanel);
         PopulateGameTweaksPanel();
 
         _statusLabel = new Label
@@ -897,6 +898,7 @@ public partial class WindowsTweaksTab : UserControl
             Margin = new Padding(0),
             BackColor = UiTheme.Surface
         };
+        UiTheme.EnableDoubleBuffering(systemLayout);
 
         var systemCards = new List<(Panel Card, Control[] Children, Label Badge)>();
 
@@ -1011,6 +1013,10 @@ public partial class WindowsTweaksTab : UserControl
 
         void LayoutSystemCards()
         {
+            // В свёрнутом окне не трогаем раскладку — иначе разворачивание моргает.
+            if (FindForm() is { WindowState: FormWindowState.Minimized })
+                return;
+
             var contentWidth = Math.Max(360, systemLayout.ClientSize.Width - systemLayout.Padding.Horizontal);
 
             foreach (var (card, children, badge) in systemCards)
@@ -1070,6 +1076,10 @@ public partial class WindowsTweaksTab : UserControl
         // а список твиков подгоняется под реальную ширину страницы.
         void LayoutGameModePage()
         {
+            // В свёрнутом окне не пересобираем список — иначе разворачивание моргает и сбрасывает прокрутку.
+            if (FindForm() is { WindowState: FormWindowState.Minimized })
+                return;
+
             var profileButtonsTop = gameModeDescriptionLabel.Bottom + 14;
             safeProfileButton.Top = profileButtonsTop;
             gameProfileButton.Top = profileButtonsTop;
