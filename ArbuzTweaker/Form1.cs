@@ -23,6 +23,7 @@ public partial class Form1 : Form
     private Panel _sidebarPanel = null!;
     private Panel _contentPanel = null!;
     private Label _versionLabel = null!;
+    private int _lastSidebarWidth = -1;
     private Dictionary<string, UserControl> _tabs = new();
 
     public Form1()
@@ -58,6 +59,19 @@ public partial class Form1 : Form
 
         if (_appSettingsService.Load().CheckForUpdatesOnStartup)
             CheckForUpdatesAsync();
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            // WS_EX_COMPOSITED — вся иерархия окна рисуется в один буфер сверху вниз.
+            // Без него при разворачивании/сворачивании иконки сайдбара и надписи
+            // перерисовываются по одному и заметно мигают.
+            var cp = base.CreateParams;
+            cp.ExStyle |= 0x02000000;
+            return cp;
+        }
     }
 
     private void InitializeComponents()
@@ -208,7 +222,15 @@ public partial class Form1 : Form
         if (WindowState == FormWindowState.Minimized)
             return;
 
-        _sidebarPanel.Width = ClientSize.Width < 1120 ? CompactSidebarWidth : ExpandedSidebarWidth;
+        var targetWidth = ClientSize.Width < 1120 ? CompactSidebarWidth : ExpandedSidebarWidth;
+
+        // Перекладываем кнопки сайдбара только при реальной смене ширины — иначе разворачивание
+        // без изменения размера зря дёргало иконки и надписи (они мигали).
+        if (targetWidth == _lastSidebarWidth)
+            return;
+
+        _lastSidebarWidth = targetWidth;
+        _sidebarPanel.Width = targetWidth;
         LayoutSidebarButtons();
     }
 
