@@ -61,17 +61,40 @@ public partial class Form1 : Form
             CheckForUpdatesAsync();
     }
 
-    protected override CreateParams CreateParams
+    private const int WM_SYSCOMMAND = 0x0112;
+    private const int WM_SETREDRAW = 0x000B;
+    private const int SC_RESTORE = 0xF120;
+    private const int SC_MAXIMIZE = 0xF030;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
+
+    protected override void WndProc(ref Message m)
     {
-        get
+        // При разворачивании/восстановлении гасим перерисовку на время раскладки, затем делаем
+        // один чистый проход — иначе иконки и надписи мигают, появляясь по одной. В отличие от
+        // WS_EX_COMPOSITED это не трогает плавность прокрутки в остальное время.
+        if (m.Msg == WM_SYSCOMMAND && IsHandleCreated)
         {
-            // WS_EX_COMPOSITED — вся иерархия окна рисуется в один буфер сверху вниз.
-            // Без него при разворачивании/сворачивании иконки сайдбара и надписи
-            // перерисовываются по одному и заметно мигают.
-            var cp = base.CreateParams;
-            cp.ExStyle |= 0x02000000;
-            return cp;
+            var command = m.WParam.ToInt32() & 0xFFF0;
+            if (command == SC_RESTORE || command == SC_MAXIMIZE)
+            {
+                SendMessage(Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+                base.WndProc(ref m);
+                SendMessage(Handle, WM_SETREDRAW, new IntPtr(1), IntPtr.Zero);
+
+                const uint RDW_INVALIDATE = 0x1, RDW_ERASE = 0x4, RDW_ALLCHILDREN = 0x80,
+                    RDW_UPDATENOW = 0x100, RDW_FRAME = 0x400;
+                RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
+                return;
+            }
         }
+
+        base.WndProc(ref m);
     }
 
     private void InitializeComponents()
