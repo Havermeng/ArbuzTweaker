@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     
     <AssemblyName>ArbuzTweaker</AssemblyName>
-    <Version>1.0.14</Version>
+    <Version>1.0.15</Version>
     <Authors>ArbuzTweaker</Authors>
     <Description>Твикер для игр и системы</Description>
   </PropertyGroup>

@@ -6,7 +6,13 @@
     UpgradeCode="{8C9FCBA4-60EF-454B-9F03-D8F5BB1AD87E}"
     Scope="perMachine">
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of ArbuzTweaker is already installed." />
+    <!-- Schedule=afterInstallInitialize: старую версию удаляем ДО расчёта установки новой.
+         Иначе неизменившиеся файлы рантайма (.NET, та же версия) на апгрейде пропускаются
+         как "уже есть", а затем удаляются вместе со старым продуктом — self-contained
+         приложение остаётся без рантайма и не запускается. -->
+    <MajorUpgrade
+      Schedule="afterInstallInitialize"
+      DowngradeErrorMessage="A newer version of ArbuzTweaker is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="ArbuzIcon" SourceFile="$(var.RepoRoot)\ArbuzTweaker\Assets\Arbuz.ico" />
