@@ -93,6 +93,8 @@ public partial class DotaTab : UserControl
                 new ConfigCommandDefinition("engine_no_focus_sleep 0", "Не дает игре замедляться при потере фокуса; может помочь после сворачивания окна."),
                 new ConfigCommandDefinition("joystick 0", "Отключает поддержку джойстика."),
                 new ConfigCommandDefinition("snd_disable_mixer_duck 1", "Отключает автоматическое приглушение звука."),
+                new ConfigCommandDefinition("cl_showfps 1", "Показывает встроенный счётчик FPS поверх игры — для диагностики; на производительность не влияет."),
+                new ConfigCommandDefinition("cl_forcepreload 1", "Заранее загружает текстуры и модели при входе в матч. Загрузка карты дольше, зато меньше подгрузок и микрофризов во время игры."),
                 new ConfigCommandDefinition("developer 1", "Включает расширенный вывод отладочных сообщений."),
                 new ConfigCommandDefinition("con_enable 1", "Разрешает консоль.")
             })

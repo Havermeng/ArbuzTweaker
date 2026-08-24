@@ -7,6 +7,9 @@ public partial class ScpSlLaunchOptionsTab : UserControl
     private const string NoLogOption = "-nolog";
     private const string FDiscordOption = "-fdiscord";
     private const string RuWeakHttpSecurityOption = "-ru --weak-http-security";
+    private const string WindowModeExclusiveOption = "-window-mode exclusive";
+    private const string ScreenFullscreenOption = "-screen-fullscreen 1";
+    private const string ScreenQualityLowOption = "-screen-quality Low";
 
     private readonly ScpSlService _scpSlService;
     private readonly AppSettingsService _appSettingsService;
@@ -17,6 +20,9 @@ public partial class ScpSlLaunchOptionsTab : UserControl
     private CheckBox _noLogCheckBox = null!;
     private CheckBox _discordCheckBox = null!;
     private CheckBox _ruWeakHttpSecurityCheckBox = null!;
+    private CheckBox _windowModeExclusiveCheckBox = null!;
+    private CheckBox _screenFullscreenCheckBox = null!;
+    private CheckBox _screenQualityLowCheckBox = null!;
     private Label _pathLabel = null!;
     private Label _statusLabel = null!;
     private bool _isUpdatingUi;
@@ -470,6 +476,9 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         AddOptionRow(ref y, ref rowIndex, ref _ruWeakHttpSecurityCheckBox, RuWeakHttpSecurityOption, "Для RU-региона. Иногда помогает с проблемами подключения к серверам игры.", selectedOptions.Contains(RuWeakHttpSecurityOption), searchQuery, RuWeakHttpSecurityCheckBox_CheckedChanged);
         AddOptionRow(ref y, ref rowIndex, ref _noLogCheckBox, NoLogOption, "Отключает часть логирования Unity/игры.", selectedOptions.Contains(NoLogOption), searchQuery, NoLogCheckBox_CheckedChanged);
         AddOptionRow(ref y, ref rowIndex, ref _discordCheckBox, FDiscordOption, "Запускает игру с Discord-авторизацией, если она нужна текущей сборке.", selectedOptions.Contains(FDiscordOption), searchQuery, DiscordCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _screenFullscreenCheckBox, ScreenFullscreenOption, "Форсирует запуск в полноэкранном режиме, даже если игра запомнила оконный.", selectedOptions.Contains(ScreenFullscreenOption), searchQuery, ScreenFullscreenCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _windowModeExclusiveCheckBox, WindowModeExclusiveOption, "Эксклюзивный полноэкранный режим (в паре с «-screen-fullscreen 1»). Ниже задержка вывода кадра, чем в окне без рамки.", selectedOptions.Contains(WindowModeExclusiveOption), searchQuery, WindowModeExclusiveCheckBox_CheckedChanged);
+        AddOptionRow(ref y, ref rowIndex, ref _screenQualityLowCheckBox, ScreenQualityLowOption, "Форсирует низкий пресет качества графики при запуске — прирост FPS на слабых ПК ценой картинки.", selectedOptions.Contains(ScreenQualityLowOption), searchQuery, ScreenQualityLowCheckBox_CheckedChanged);
 
         _optionsPanel.AutoScrollMinSize = new Size(0, y + 12);
         _optionsPanel.ResumeLayout();
@@ -525,6 +534,24 @@ public partial class ScpSlLaunchOptionsTab : UserControl
             SetOptionLine(FDiscordOption, _discordCheckBox.Checked);
     }
 
+    private void WindowModeExclusiveCheckBox_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (!_isUpdatingUi)
+            SetOptionLine(WindowModeExclusiveOption, _windowModeExclusiveCheckBox.Checked);
+    }
+
+    private void ScreenFullscreenCheckBox_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (!_isUpdatingUi)
+            SetOptionLine(ScreenFullscreenOption, _screenFullscreenCheckBox.Checked);
+    }
+
+    private void ScreenQualityLowCheckBox_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (!_isUpdatingUi)
+            SetOptionLine(ScreenQualityLowOption, _screenQualityLowCheckBox.Checked);
+    }
+
     private void RuWeakHttpSecurityCheckBox_CheckedChanged(object? sender, EventArgs e)
     {
         if (!_isUpdatingUi)
@@ -575,6 +602,9 @@ public partial class ScpSlLaunchOptionsTab : UserControl
         _noLogCheckBox.Checked = lines.Contains(NoLogOption);
         _discordCheckBox.Checked = lines.Contains(FDiscordOption);
         _ruWeakHttpSecurityCheckBox.Checked = lines.Contains(RuWeakHttpSecurityOption);
+        _windowModeExclusiveCheckBox.Checked = lines.Contains(WindowModeExclusiveOption);
+        _screenFullscreenCheckBox.Checked = lines.Contains(ScreenFullscreenOption);
+        _screenQualityLowCheckBox.Checked = lines.Contains(ScreenQualityLowOption);
         _isUpdatingUi = false;
     }
 
@@ -617,6 +647,9 @@ public partial class ScpSlLaunchOptionsTab : UserControl
                 continue;
 
             line = ExtractKnownOption(line, RuWeakHttpSecurityOption, result, seen);
+            line = ExtractKnownOption(line, WindowModeExclusiveOption, result, seen);
+            line = ExtractKnownOption(line, ScreenFullscreenOption, result, seen);
+            line = ExtractKnownOption(line, ScreenQualityLowOption, result, seen);
             line = ExtractKnownOption(line, NoLogOption, result, seen);
             line = ExtractKnownOption(line, FDiscordOption, result, seen);
 

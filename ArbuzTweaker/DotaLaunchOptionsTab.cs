@@ -17,6 +17,17 @@ public partial class DotaLaunchOptionsTab : UserControl
     private const string PrewarmOption = "-prewarm";
     private const string ThreadsOptionPrefix = "-threads";
 
+    // Простые флаги-переключатели (из внешних гайдов). Каждый — отдельная галочка; вписать их
+    // руками в поле по-прежнему можно, галочки лишь для удобства.
+    private static readonly (string Option, string Description)[] ExtraFlagOptions =
+    {
+        ("-fullscreen", "Запускает игру сразу в полноэкранном режиме, а не в окне. Обычно чуть выше FPS и ниже задержка, чем в оконном режиме."),
+        ("-novr", "Dota не пытается запускать VR-модули (SteamVR) при старте — запуск немного быстрее. Ставьте, если не играете в VR."),
+        ("-nojoy", "Отключает опрос геймпадов/джойстиков. Чуть быстрее старт и меньше фоновой работы. Ставьте, если играете только мышью и клавиатурой."),
+        ("-nod3d9ex", "Отключает ускоренный оконный режим D3D9Ex. У большинства разницы нет; иногда убирает подлагивания и проблемы с вводом при сворачивании окна — включайте, только если ловите такое."),
+        ("-noaafonts", "Отключает сглаживание шрифтов интерфейса. Экономия мизерная, текст станет чуть грубее — эффект почти незаметен.")
+    };
+
     private readonly ConfigService _configService;
     private readonly Dota2Service _dota2Service;
     private readonly AppSettingsService _appSettingsService;
@@ -40,6 +51,7 @@ public partial class DotaLaunchOptionsTab : UserControl
     private bool _isLoadingSteamAccounts;
     private int _statusToken;
     private int _lastOptionsPanelWidth = -1;
+    private readonly Dictionary<string, CheckBox> _extraFlagCheckBoxes = new(StringComparer.OrdinalIgnoreCase);
 
     public DotaLaunchOptionsTab(ConfigService configService, Dota2Service dota2Service, AppSettingsService appSettingsService)
     {
@@ -539,6 +551,14 @@ public partial class DotaLaunchOptionsTab : UserControl
         AddLaunchOptionRow(ref y, ref rowIndex, ref _mapDotaCheckBox, MapDotaOption, "Запускает загрузку карты dota при старте клиента.", selectedOptions.Contains(MapDotaOption), searchQuery, MapDotaCheckBox_CheckedChanged);
         AddLaunchOptionRow(ref y, ref rowIndex, ref _prewarmCheckBox, PrewarmOption, "Предзагружает игровые ресурсы; может уменьшить проблемы при загрузке в матч.", selectedOptions.Contains(PrewarmOption), searchQuery, PrewarmCheckBox_CheckedChanged);
 
+        _extraFlagCheckBoxes.Clear();
+        foreach (var (option, description) in ExtraFlagOptions)
+        {
+            CheckBox checkBox = null!;
+            AddLaunchOptionRow(ref y, ref rowIndex, ref checkBox, option, description, selectedOptions.Contains(option), searchQuery, ExtraFlagCheckBox_CheckedChanged);
+            _extraFlagCheckBoxes[option] = checkBox;
+        }
+
         _optionsPanel.AutoScrollMinSize = new Size(0, y + 12);
         _optionsPanel.ResumeLayout();
         _isUpdatingLaunchOptionsUi = preserveState;
@@ -587,6 +607,15 @@ public partial class DotaLaunchOptionsTab : UserControl
             return;
 
         SetOptionLine(HighOption, _highCheckBox.Checked);
+    }
+
+    private void ExtraFlagCheckBox_CheckedChanged(object? sender, EventArgs e)
+    {
+        if (_isUpdatingLaunchOptionsUi)
+            return;
+
+        if (sender is CheckBox checkBox && checkBox.Tag is string option)
+            SetOptionLine(option, checkBox.Checked);
     }
 
     private void NoHltvCheckBox_CheckedChanged(object? sender, EventArgs e)
@@ -688,6 +717,11 @@ public partial class DotaLaunchOptionsTab : UserControl
         _novidCheckBox.Checked = lines.Contains(NovidOption);
         _mapDotaCheckBox.Checked = lines.Contains(MapDotaOption);
         _prewarmCheckBox.Checked = lines.Contains(PrewarmOption);
+        foreach (var (option, _) in ExtraFlagOptions)
+        {
+            if (_extraFlagCheckBoxes.TryGetValue(option, out var checkBox))
+                checkBox.Checked = lines.Contains(option);
+        }
         _isUpdatingLaunchOptionsUi = false;
     }
 
@@ -747,6 +781,8 @@ public partial class DotaLaunchOptionsTab : UserControl
             line = ExtractKnownOption(line, HighOption, result, seen);
             line = ExtractKnownOption(line, NoHltvOption, result, seen);
             line = ExtractKnownOption(line, NovidOption, result, seen);
+            foreach (var (option, _) in ExtraFlagOptions)
+                line = ExtractKnownOption(line, option, result, seen);
             line = ExtractThreadsOption(line, result, seen);
 
             line = NormalizeWhitespace(line);

@@ -96,7 +96,25 @@ public enum PcTuningAction
     NetBios,
 
     /// <summary>DisableDynamicPstate=1 у всех видеокарт NVIDIA (подключ Class выбирается автоматически).</summary>
-    NvidiaPState
+    NvidiaPState,
+
+    /// <summary>compact /compactos:always — сжимает системные файлы Windows, освобождает место на SSD.</summary>
+    CompactOs,
+
+    /// <summary>Схема питания «Максимальная производительность» (powercfg -duplicatescheme + активация).</summary>
+    UltimatePlan,
+
+    /// <summary>Распарковка ядер CPU — минимум активных ядер 100% в текущей схеме питания.</summary>
+    CoreUnpark,
+
+    /// <summary>Алгоритм Нагла off — TcpAckFrequency=1 и TCPNoDelay=1 по всем интерфейсам.</summary>
+    Nagle,
+
+    /// <summary>Отключение энергосбережения и модерации прерываний у сетевых адаптеров (Green/EEE/FlowControl/InterruptModeration).</summary>
+    NicOffloads,
+
+    /// <summary>Минимальное состояние процессора 100% + агрессивный режим ускорения в текущей схеме питания (powercfg).</summary>
+    MaxCpuPerformance
 }
 
 public sealed record PcTuningTweak(
@@ -558,6 +576,89 @@ public static class PcTuningCatalog
             })
         {
             Warning = "Оставляет систему без антивируса. Сработает только при выключенной Tamper Protection (её нужно снять вручную в «Безопасность Windows»). Windows может вернуть защиту при обновлении."
+        },
+
+        // ───────────── Добавлено из внешних гайдов (TikTok/Steam) ─────────────
+        new PcTuningTweak(
+            "filter-keys",
+            "Отключить фильтрацию ввода (Filter Keys)",
+            "Filter Keys включается удержанием правого Shift 8 секунд и заставляет Windows игнорировать быстрые повторные нажатия. Из-за него в игре могут «теряться» нажатия и выскакивать окно спец-возможностей. Твик выключает этот режим и запрет на его случайное включение.",
+            PcTuningCategory.Privacy,
+            PcTuningImpact.NoPerformance,
+            new[]
+            {
+                PcTuningValue.UserString(@"Control Panel\Accessibility\Keyboard Response", "Flags", "122", "126")
+            }),
+
+        new PcTuningTweak(
+            "compact-os",
+            "Сжать системные файлы (CompactOS)",
+            "Включает компактное сжатие системных файлов Windows (compact /compactos). Освобождает несколько гигабайт на SSD без заметной потери скорости.",
+            PcTuningCategory.Stability,
+            PcTuningImpact.NoPerformance,
+            Array.Empty<PcTuningValue>())
+        {
+            Action = PcTuningAction.CompactOs,
+            Warning = "Первое сжатие может занять несколько минут."
+        },
+
+        new PcTuningTweak(
+            "nagle-off",
+            "Отключить алгоритм Нагла",
+            "Ставит TcpAckFrequency=1 и TCPNoDelay=1 всем сетевым интерфейсам — пакеты уходят без задержки на объединение. Может снизить сетевую задержку в онлайн-играх.",
+            PcTuningCategory.Latency,
+            PcTuningImpact.Situational,
+            Array.Empty<PcTuningValue>())
+        {
+            Action = PcTuningAction.Nagle
+        },
+
+        new PcTuningTweak(
+            "nic-offloads",
+            "Отключить энергосбережение сетевой карты",
+            "Выключает у сетевых адаптеров Green Ethernet, Energy Efficient Ethernet, Flow Control и Interrupt Moderation — функции, которые ради экономии добавляют задержку пакетам.",
+            PcTuningCategory.Latency,
+            PcTuningImpact.Situational,
+            Array.Empty<PcTuningValue>())
+        {
+            Action = PcTuningAction.NicOffloads,
+            RequiresReboot = true
+        },
+
+        new PcTuningTweak(
+            "ultimate-plan",
+            "План питания «Максимальная производительность»",
+            "Разблокирует и включает скрытую схему питания Ultimate Performance — процессор реже сбрасывает частоты. Эффект спорный и зависит от системы, у части ПК его нет.",
+            PcTuningCategory.Latency,
+            PcTuningImpact.Situational,
+            Array.Empty<PcTuningValue>())
+        {
+            Action = PcTuningAction.UltimatePlan,
+            Warning = "Выше энергопотребление и нагрев. На ноутбуках быстрее садит батарею."
+        },
+
+        new PcTuningTweak(
+            "max-cpu-performance",
+            "Максимальная частота процессора",
+            "Ставит минимальное состояние процессора на 100% и режим ускорения «Агрессивный» в текущей схеме питания. Процессор перестаёт снижать частоту в простое — заметно ровнее становятся редкие просадки (1% low), игра ощущается плавнее.",
+            PcTuningCategory.Latency,
+            PcTuningImpact.Situational,
+            Array.Empty<PcTuningValue>())
+        {
+            Action = PcTuningAction.MaxCpuPerformance,
+            Warning = "Выше энергопотребление и нагрев, кулер шумит и в простое. На ноутбуках заметно быстрее садится батарея. Откат возвращает минимальное состояние к 5%."
+        },
+
+        new PcTuningTweak(
+            "core-unpark",
+            "Распарковать ядра процессора",
+            "Запрещает Windows парковать (усыплять) ядра CPU в текущей схеме питания — все ядра всегда активны. Может убрать микрофризы на переходах нагрузки.",
+            PcTuningCategory.Latency,
+            PcTuningImpact.Situational,
+            Array.Empty<PcTuningValue>())
+        {
+            Action = PcTuningAction.CoreUnpark,
+            Warning = "Выше энергопотребление и нагрев в простое."
         }
     };
 }

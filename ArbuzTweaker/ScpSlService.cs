@@ -363,6 +363,65 @@ public sealed class ScpSlService
         });
     }
 
+    // boot.config — текстовый конфиг движка Unity в папке установки игры
+    // (…\SCP Secret Laboratory\SCPSL_Data\boot.config). Формат — строки key=value.
+    public async Task<string?> GetBootConfigPathAsync()
+    {
+        var gamePath = _gamePath;
+        if (string.IsNullOrWhiteSpace(gamePath))
+        {
+            var (foundPath, _) = await FindGameAsync();
+            gamePath = foundPath;
+        }
+
+        if (string.IsNullOrWhiteSpace(gamePath))
+            return null;
+
+        return Path.Combine(gamePath, "SCPSL_Data", "boot.config");
+    }
+
+    public async Task<string?> LoadBootConfigAsync()
+    {
+        try
+        {
+            var path = await GetBootConfigPathAsync();
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return null;
+
+            return await File.ReadAllTextAsync(path);
+        }
+        catch (Exception ex)
+        {
+            _logService?.Error("Failed to load SCP:SL boot.config.", ex);
+            return null;
+        }
+    }
+
+    public async Task<bool> SaveBootConfigAsync(string content)
+    {
+        try
+        {
+            var path = await GetBootConfigPathAsync();
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            var directory = Path.GetDirectoryName(path);
+            // Папку SCPSL_Data сами не создаём: если её нет — игра не найдена, писать некуда.
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                return false;
+
+            _fileBackupService?.BackupFile(path, "SCP SL boot.config");
+            await File.WriteAllTextAsync(path, content);
+            _logService?.Info($"SCP:SL boot.config saved: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logService?.Error("Failed to save SCP:SL boot.config.", ex);
+            return false;
+        }
+    }
+
     private List<string> GetAllSteamPaths()
     {
         var paths = new List<string>();

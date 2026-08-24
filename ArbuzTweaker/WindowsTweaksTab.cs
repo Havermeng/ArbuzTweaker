@@ -37,7 +37,6 @@ public partial class WindowsTweaksTab : UserControl
 
     private CheckBox _nduCheckBox = null!;
     private CheckBox _dhcpMediaSenseCheckBox = null!;
-    private CheckBox _googleDnsCheckBox = null!;
     private CheckBox _disableIpv6CheckBox = null!;
     private CheckBox _edgeStartupBoostCheckBox = null!;
     private CheckBox _mpoDisabledCheckBox = null!;
@@ -50,7 +49,6 @@ public partial class WindowsTweaksTab : UserControl
     private Panel _gameTweaksPanel = null!;
     private Label _nduStateLabel = null!;
     private Label _dhcpMediaSenseStateLabel = null!;
-    private Label _googleDnsStateLabel = null!;
     private Label _ipv6StateLabel = null!;
     private Label _edgeStateLabel = null!;
     private Label _mpoStateLabel = null!;
@@ -66,12 +64,12 @@ public partial class WindowsTweaksTab : UserControl
     {
         new(
             "GPU Priority Scheduling (NVIDIA)",
-            "Увеличивает GPU Priority в Multimedia SystemProfile. Включение ставит 8, выключение возвращает 2.",
+            "Повышает приоритет задач видеокарты в планировщике Windows — кадры игры обрабатываются раньше фоновых задач. Небольшой выигрыш к плавности.",
             true,
             new[] { RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "GPU Priority", 8, 2) }),
         new(
             "Автоматический игровой режим Windows",
-            "Включает Game Mode через параметры GameBar: AllowAutoGameMode и AutoGameModeEnabled.",
+            "Включает игровой режим Windows: во время игры система придерживает фоновые задачи и обновления, отдавая ресурсы игре.",
             true,
             new[]
             {
@@ -80,7 +78,7 @@ public partial class WindowsTweaksTab : UserControl
             }),
         new(
             "Аппаратное планирование GPU (HAGS)",
-            "Включает HwSchMode=2 в GraphicsDrivers. Для полного эффекта может потребоваться перезагрузка.",
+            "Отдаёт управление памятью видеокарты самой видеокарте, а не Windows. На современных GPU может немного снизить задержку; на старых лучше выключить. Нужна перезагрузка.",
             true,
             new[]
             {
@@ -88,7 +86,7 @@ public partial class WindowsTweaksTab : UserControl
             }),
         new(
             "Классический полноэкранный режим",
-            "Отключает Fullscreen Optimizations через GameConfigStore: игры в полном экране работают в классическом эксклюзивном режиме.",
+            "Отключает «оптимизацию во весь экран» Windows — игры работают в классическом эксклюзивном полноэкранном режиме. Обычно это ниже задержка ввода и выше FPS.",
             true,
             new[]
             {
@@ -111,12 +109,12 @@ public partial class WindowsTweaksTab : UserControl
         },
         new(
             "Режим низкой задержки DWM",
-            "Ставит UseOLEDTaskMode=1 в DWM. Управление MPO вынесено в системную вкладку Windows.",
+            "Переводит композитор рабочего стола (то, что отрисовывает окна) в режим пониженной задержки. Помогает в оконном и безрамочном режиме. Управление MPO — на под-вкладке «Система».",
             true,
             new[] { RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows\Dwm", "UseOLEDTaskMode", 1, 0) }),
         new(
             "Выгрузка неиспользуемых DLL",
-            "Добавляет AlwaysUnloadDll для Explorer в HKCU и HKLM. При выключении параметр удаляется.",
+            "Заставляет Проводник сразу выгружать неиспользуемые библиотеки, а не держать их в памяти про запас. Немного экономит оперативную память.",
             true,
             new[]
             {
@@ -128,7 +126,7 @@ public partial class WindowsTweaksTab : UserControl
         },
         new(
             "Отключение Game DVR",
-            "Отключает встроенную запись игрового процесса Windows Game DVR.",
+            "Полностью выключает встроенную запись игр Windows (Game DVR) — убирает её фоновый оверхед. Часто заметно поднимает FPS.",
             true,
             new[]
             {
@@ -140,27 +138,27 @@ public partial class WindowsTweaksTab : UserControl
         },
         new(
             "Отключение V-Sync в DirectX",
-            "Ставит DisableVSync=1 в Direct3D Global.",
+            "Снимает вертикальную синхронизацию на уровне DirectX — ниже задержка ввода, но возможны разрывы кадра (tearing). Обычно V-Sync лучше настраивать в самой игре.",
             true,
             new[] { RegistryGameValue.LocalMachine(@"Software\Microsoft\Direct3D\Global", "DisableVSync", 1, 0) }),
         new(
             "Отключение аппаратного наложения DWM",
-            "Ставит ForceDisableOverlay=1. Может помочь старым играм, но на некоторых системах лучше оставить выключенным.",
+            "Отключает аппаратные оверлеи композитора рабочего стола. Иногда помогает старым играм, но на части систем даёт обратный эффект — включайте с проверкой.",
             true,
             new[] { RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows\Dwm", "ForceDisableOverlay", 1, 0) }),
         new(
             "Отключение приоритета фоновых задач",
-            "Ставит SystemResponsiveness=0, чтобы Multimedia SystemProfile отдавал больше ресурсов активным задачам.",
+            "Убирает резерв, который Windows держит под фоновые мультимедиа-задачи, — больше процессорного времени достаётся активной игре.",
             true,
             new[] { RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "SystemResponsiveness", 0, 20) }),
         new(
             "Отключение Power Throttling",
-            "Ставит PowerThrottlingOff=1, отключая ограничение мощности фоновых процессов.",
+            "Запрещает Windows снижать частоту процессора ради энергосбережения. Стабильнее производительность ценой большего энергопотребления и нагрева.",
             true,
             new[] { RegistryGameValue.LocalMachine(@"SYSTEM\CurrentControlSet\Control\Power\PowerThrottling", "PowerThrottlingOff", 1, 0) }),
         new(
             "Отключение энергосбережения USB",
-            "Ставит DisableSelectiveSuspend=1 для USB, чтобы уменьшить задержки устройств ввода.",
+            "Запрещает Windows усыплять USB-порты для экономии энергии. Убирает микрозадержки и залипания мыши и клавиатуры.",
             false,
             new[] { RegistryGameValue.LocalMachine(@"System\CurrentControlSet\Services\USB", "DisableSelectiveSuspend", 1, 0) })
         {
@@ -168,7 +166,7 @@ public partial class WindowsTweaksTab : UserControl
         },
         new(
             "Увеличение приоритета игр",
-            "Ставит NetworkThrottlingIndex=ffffffff и Priority=6 для Tasks\\Games.",
+            "Снимает сетевой троттлинг Windows и повышает приоритет игровых задач в планировщике мультимедиа — игре достаётся больше сети и процессора.",
             false,
             new[]
             {
@@ -194,12 +192,12 @@ public partial class WindowsTweaksTab : UserControl
         },
         new(
             "[Экспериментально] Низкая задержка Win32-презентации",
-            "Включает Win32LowLatencyPresentationEnabled для текущего пользователя. Может снижать задержку в оконном и безрамочном режиме.",
+            "Просит Windows выводить кадры по пути с меньшей задержкой в оконном и безрамочном режиме. Эффект зависит от игры и драйвера.",
             false,
             new[] { RegistryGameValue.CurrentUser(@"System\GameConfigStore", "Win32LowLatencyPresentationEnabled", 1, null) }),
         new(
             "[Экспериментально] Профиль MMCSS для игр",
-            "Выставляет высокий профиль Tasks\\Games для планировщика мультимедиа (MMCSS). Может помочь приоритету игр, но эффект зависит от системы.",
+            "Повышает игры в планировщике мультимедиа Windows: больше приоритет процессора, GPU и ввода-вывода. Может помочь плавности, но эффект зависит от системы.",
             false,
             new[]
             {
@@ -215,22 +213,22 @@ public partial class WindowsTweaksTab : UserControl
             }),
         new(
             "[Экспериментально] Глобальные запросы таймера",
-            "Разрешает GlobalTimerResolutionRequests в ядре Windows. Иногда снижает микрозадержки, но может увеличить расход батареи.",
+            "Разрешает всем приложениям повышать точность системного таймера. Иногда снижает микрозадержки, но выше расход батареи на ноутбуке.",
             false,
             new[] { RegistryGameValue.LocalMachine(@"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "GlobalTimerResolutionRequests", 1, 0) }),
         new(
             "[Экспериментально] Распределение таймеров ядра",
-            "Включает DistributeTimers — распределение таймеров ядра по ядрам процессора. Не разгон и не отключение защиты, но проверять стоит отдельно от других твиков.",
+            "Распределяет системные таймеры по всем ядрам процессора вместо одного. Может сгладить микрофризы; проверяйте отдельно от других твиков.",
             false,
             new[] { RegistryGameValue.LocalMachine(@"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "DistributeTimers", 1, 0) }),
         new(
             "[Экспериментально] Очередь кадров DWM",
-            "Ставит MaxQueuedBuffers=2 для DWM. Может повлиять на задержку в оконном и безрамочном режиме, эффект зависит от драйвера.",
+            "Ограничивает очередь кадров композитора до двух — меньше задержка в оконном и безрамочном режиме. Эффект зависит от драйвера.",
             false,
             new[] { RegistryGameValue.CurrentUser(@"Software\Microsoft\Windows\DWM", "MaxQueuedBuffers", 2, null) }),
         new(
             "Отключение ускорения мыши",
-            "Отключает Enhanced Pointer Precision через Control Panel\\Mouse (MouseSpeed и пороги в 0). Применяется после повторного входа в систему.",
+            "Отключает «повышенную точность указателя» Windows — курсор и прицел двигаются ровно на физическое перемещение мыши, без ускорения. Важно для прицеливания. Применится после повторного входа в систему.",
             true,
             new[]
             {
@@ -240,7 +238,7 @@ public partial class WindowsTweaksTab : UserControl
             }),
         new(
             "Ускорение работы видеокарты DWM",
-            "Ставит EnableHWAcceleration=1 в DWM.",
+            "Включает аппаратное ускорение композитора рабочего стола — интерфейс Windows отрисовывается видеокартой, а не процессором.",
             true,
             new[] { RegistryGameValue.LocalMachine(@"SOFTWARE\Microsoft\Windows\Dwm", "EnableHWAcceleration", 1, 0) })
     };
@@ -346,7 +344,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var nduDescriptionLabel = new Label
         {
-            Text = "Меняет значение Start у службы Ndu. При включении ставит 4, что может снизить рост потребления памяти из-за Ndu.",
+            Text = "Служба Ndu (учёт сетевого трафика) со временем наращивает потребление оперативной памяти. Твик отключает её автозапуск, убирая этот рост.",
             Location = new Point(20, 372),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
@@ -355,7 +353,7 @@ public partial class WindowsTweaksTab : UserControl
 
         _nduStateLabel = new Label
         {
-            Text = "Текущее значение Ndu Start: неизвестно",
+            Text = "Состояние: неизвестно",
             Location = new Point(20, 418),
             AutoSize = true,
             ForeColor = Color.Gray
@@ -387,7 +385,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var edgeDescriptionLabel = new Label
         {
-            Text = "Создаёт или меняет параметр StartupBoostEnabled в политике Edge. При включении ставит 0, чтобы Edge не подгружался в фоне заранее.",
+            Text = "Отключает «ускоренный запуск» браузера Edge — он перестаёт заранее подгружать себя в фон при старте Windows. Меньше фоновых процессов и расхода памяти.",
             Location = new Point(20, 567),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
@@ -396,7 +394,7 @@ public partial class WindowsTweaksTab : UserControl
 
         _edgeStateLabel = new Label
         {
-            Text = "Текущее значение StartupBoostEnabled: неизвестно",
+            Text = "Состояние: неизвестно",
             Location = new Point(20, 613),
             AutoSize = true,
             ForeColor = Color.Gray
@@ -470,7 +468,7 @@ public partial class WindowsTweaksTab : UserControl
 
         _dhcpMediaSenseCheckBox = new CheckBox
         {
-            Text = UnsafeTweaksPrompt.Marker + " DisableDHCPMediaSense",
+            Text = UnsafeTweaksPrompt.Marker + " Не сбрасывать сеть при кратких обрывах линка",
             Location = new Point(20, 1060),
             AutoSize = true,
             ForeColor = Color.White
@@ -478,7 +476,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var dhcpMediaSenseDescriptionLabel = new Label
         {
-            Text = "Создаёт или меняет параметр DisableDHCPMediaSense в TCP/IP. Иногда помогает при обрывах проводного подключения, когда Windows слишком агрессивно реагирует на краткие потери линка.",
+            Text = "Windows по умолчанию сбрасывает сетевые настройки, как только кабель на миг теряет связь. Твик отключает эту реакцию (DisableDHCPMediaSense) — помогает при коротких обрывах проводного подключения.",
             Location = new Point(20, 1087),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
@@ -487,7 +485,7 @@ public partial class WindowsTweaksTab : UserControl
 
         _dhcpMediaSenseStateLabel = new Label
         {
-            Text = "Текущее значение DisableDHCPMediaSense: неизвестно",
+            Text = "Состояние: неизвестно",
             Location = new Point(20, 1150),
             AutoSize = true,
             ForeColor = Color.Gray
@@ -500,39 +498,6 @@ public partial class WindowsTweaksTab : UserControl
             Size = new Size(120, 35)
         };
         applyDhcpMediaSenseButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ApplyDhcpMediaSenseAsync);
-
-        _googleDnsCheckBox = new CheckBox
-        {
-            Text = "Использовать Google DNS (8.8.8.8 / 8.8.4.4)",
-            Location = new Point(20, 1250),
-            AutoSize = true,
-            ForeColor = Color.White
-        };
-
-        var googleDnsDescriptionLabel = new Label
-        {
-            Text = "Назначает активным физическим адаптерам публичные DNS Google. Это может помочь, если проблема связана именно с резолвингом DNS, а не с самим подключением.",
-            Location = new Point(20, 1277),
-            MaximumSize = new Size(WindowsPageContentWidth, 0),
-            AutoSize = true,
-            ForeColor = Color.Gainsboro
-        };
-
-        _googleDnsStateLabel = new Label
-        {
-            Text = "Состояние Google DNS: неизвестно",
-            Location = new Point(20, 1340),
-            AutoSize = true,
-            ForeColor = Color.Gray
-        };
-
-        var applyGoogleDnsButton = new Button
-        {
-            Text = "Применить",
-            Location = new Point(20, 1370),
-            Size = new Size(120, 35)
-        };
-        applyGoogleDnsButton.Click += async (s, e) => await UiTheme.RunButtonOperationAsync(s, ApplyGoogleDnsAsync);
 
         _disableIpv6CheckBox = new CheckBox
         {
@@ -585,7 +550,7 @@ public partial class WindowsTweaksTab : UserControl
 
         var mpoDescriptionLabel = new Label
         {
-            Text = "Официальный workaround NVIDIA для мерцаний/артефактов: отключение ставит OverlayTestMode=5 в DWM, включение удаляет этот параметр.",
+            Text = "Официальное решение NVIDIA от мерцаний и артефактов изображения: отключает многоплоскостное наложение (MPO) в композиторе Windows. Помогает, если экран мигает в играх, видео или при переключении окон.",
             Location = new Point(20, 162),
             MaximumSize = new Size(WindowsPageContentWidth, 0),
             AutoSize = true,
@@ -769,7 +734,6 @@ public partial class WindowsTweaksTab : UserControl
 
         RegisterUnsafeCheckBox(_nduCheckBox);
         RegisterUnsafeCheckBox(_dhcpMediaSenseCheckBox);
-        RegisterUnsafeCheckBox(_googleDnsCheckBox);
         RegisterUnsafeCheckBox(_disableIpv6CheckBox);
         RegisterUnsafeCheckBox(_gameRealtimePriorityCheckBox);
 
@@ -779,7 +743,6 @@ public partial class WindowsTweaksTab : UserControl
         UiTheme.StyleActionButton(repairNetworkButton, true);
         UiTheme.StyleActionButton(restartAdaptersButton, true);
         UiTheme.StyleActionButton(applyDhcpMediaSenseButton, true);
-        UiTheme.StyleActionButton(applyGoogleDnsButton, true);
         UiTheme.StyleActionButton(applyIpv6Button, true);
         UiTheme.StyleActionButton(applyNvidiaOverlayButton, true);
         UiTheme.StyleActionButton(browseNvidiaOverlayCustomProgramButton);
@@ -995,7 +958,6 @@ public partial class WindowsTweaksTab : UserControl
         AsCardTitle(restartAdaptersLabel);
         AddCard(MakeCard(UiTheme.Impact.AntiStutter, restartAdaptersLabel, restartAdaptersDescriptionLabel, restartAdaptersButton));
         AddCard(MakeCard(UiTheme.Impact.AntiStutter, _dhcpMediaSenseCheckBox, dhcpMediaSenseDescriptionLabel, _dhcpMediaSenseStateLabel, applyDhcpMediaSenseButton));
-        AddCard(MakeCard(UiTheme.Impact.AntiStutter, _googleDnsCheckBox, googleDnsDescriptionLabel, _googleDnsStateLabel, applyGoogleDnsButton));
         AddCard(MakeCard(UiTheme.Impact.AntiStutter, _disableIpv6CheckBox, ipv6DescriptionLabel, _ipv6StateLabel, applyIpv6Button));
 
         AddHeader(nvidiaOverlayLabel);
@@ -1149,7 +1111,6 @@ public partial class WindowsTweaksTab : UserControl
         {
             LoadNduState();
             LoadDhcpMediaSenseState();
-            LoadGoogleDnsState();
             LoadEdgeState();
             LoadMpoState();
             LoadNvidiaOverlayPreLaunchSettings();
@@ -1182,7 +1143,7 @@ public partial class WindowsTweaksTab : UserControl
             if (currentValue is int startValue)
             {
                 _nduCheckBox.Checked = startValue == 4;
-                _nduStateLabel.Text = $"Текущее значение Ndu Start: {startValue}";
+                _nduStateLabel.Text = startValue == 4 ? "Состояние: служба Ndu отключена" : "Состояние: служба Ndu работает";
                 _nduStateLabel.ForeColor = Color.Gainsboro;
                 return;
             }
@@ -1206,65 +1167,19 @@ public partial class WindowsTweaksTab : UserControl
             if (currentValue is int value)
             {
                 _dhcpMediaSenseCheckBox.Checked = value == 1;
-                _dhcpMediaSenseStateLabel.Text = $"Текущее значение DisableDHCPMediaSense: {value}";
+                _dhcpMediaSenseStateLabel.Text = value == 1 ? "Состояние: включено" : "Состояние: выключено";
                 _dhcpMediaSenseStateLabel.ForeColor = Color.Gainsboro;
                 return;
             }
 
             _dhcpMediaSenseCheckBox.Checked = false;
-            _dhcpMediaSenseStateLabel.Text = "DisableDHCPMediaSense не задан. Будет создан при применении.";
+            _dhcpMediaSenseStateLabel.Text = "Состояние: выключено (параметр ещё не задавался)";
             _dhcpMediaSenseStateLabel.ForeColor = Color.Gray;
         }
         catch
         {
             _dhcpMediaSenseStateLabel.Text = "Нет доступа к чтению DisableDHCPMediaSense";
             _dhcpMediaSenseStateLabel.ForeColor = Color.Orange;
-        }
-    }
-
-    private void LoadGoogleDnsState()
-    {
-        try
-        {
-            var activeAdapters = NetworkInterface.GetAllNetworkInterfaces()
-                .Where(n => n.OperationalStatus == OperationalStatus.Up)
-                .Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-                .Where(n => n.NetworkInterfaceType != NetworkInterfaceType.Tunnel)
-                .ToList();
-
-            if (activeAdapters.Count == 0)
-            {
-                _googleDnsCheckBox.Checked = false;
-                _googleDnsStateLabel.Text = "Не найдено активных сетевых адаптеров";
-                _googleDnsStateLabel.ForeColor = Color.Gray;
-                return;
-            }
-
-            var allGoogleDns = true;
-            foreach (var adapter in activeAdapters)
-            {
-                var dnsAddresses = adapter.GetIPProperties().DnsAddresses
-                    .Where(address => address.AddressFamily == AddressFamily.InterNetwork)
-                    .Select(address => address.ToString())
-                    .ToList();
-
-                if (!(dnsAddresses.Contains("8.8.8.8") && dnsAddresses.Contains("8.8.4.4")))
-                {
-                    allGoogleDns = false;
-                    break;
-                }
-            }
-
-            _googleDnsCheckBox.Checked = allGoogleDns;
-            _googleDnsStateLabel.Text = allGoogleDns
-                ? "Google DNS задан на активных адаптерах"
-                : "Google DNS не задан на всех активных адаптерах";
-            _googleDnsStateLabel.ForeColor = allGoogleDns ? Color.Gainsboro : Color.Gray;
-        }
-        catch
-        {
-            _googleDnsStateLabel.Text = "Не удалось определить состояние DNS";
-            _googleDnsStateLabel.ForeColor = Color.Orange;
         }
     }
 
@@ -1316,13 +1231,13 @@ public partial class WindowsTweaksTab : UserControl
             if (currentValue is int startupBoostValue)
             {
                 _edgeStartupBoostCheckBox.Checked = startupBoostValue == 0;
-                _edgeStateLabel.Text = $"Текущее значение StartupBoostEnabled: {startupBoostValue}";
+                _edgeStateLabel.Text = startupBoostValue == 0 ? "Состояние: ускоренный запуск отключён" : "Состояние: ускоренный запуск включён";
                 _edgeStateLabel.ForeColor = Color.Gainsboro;
                 return;
             }
 
             _edgeStartupBoostCheckBox.Checked = false;
-            _edgeStateLabel.Text = "StartupBoostEnabled не задан. Будет создан при применении.";
+            _edgeStateLabel.Text = "Состояние: ускоренный запуск включён (по умолчанию)";
             _edgeStateLabel.ForeColor = Color.Gray;
         }
         catch
@@ -1839,7 +1754,7 @@ public partial class WindowsTweaksTab : UserControl
             }
 
             key.SetValue("Start", targetValue, RegistryValueKind.DWord);
-            _nduStateLabel.Text = $"Текущее значение Ndu Start: {targetValue}";
+            _nduStateLabel.Text = targetValue == 4 ? "Состояние: служба Ndu отключена" : "Состояние: служба Ndu работает";
             _nduStateLabel.ForeColor = Color.Gainsboro;
             ShowStatus("Твик Ndu применён", Color.Green);
         }
@@ -1873,7 +1788,6 @@ public partial class WindowsTweaksTab : UserControl
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             ShowStatus("Восстановление сети выполнено", Color.Green);
-            LoadGoogleDnsState();
             await LoadIpv6StateAsync();
             return;
         }
@@ -1914,7 +1828,7 @@ public partial class WindowsTweaksTab : UserControl
             }
 
             key.SetValue("DisableDHCPMediaSense", targetValue, RegistryValueKind.DWord);
-            _dhcpMediaSenseStateLabel.Text = $"Текущее значение DisableDHCPMediaSense: {targetValue}";
+            _dhcpMediaSenseStateLabel.Text = targetValue == 1 ? "Состояние: включено" : "Состояние: выключено";
             _dhcpMediaSenseStateLabel.ForeColor = Color.Gainsboro;
             ShowStatus("DisableDHCPMediaSense применён", Color.Green);
         }
@@ -1928,31 +1842,6 @@ public partial class WindowsTweaksTab : UserControl
         }
 
         await Task.CompletedTask;
-    }
-
-    private async Task ApplyGoogleDnsAsync()
-    {
-        if (!ConfirmNetworkOperation("Будут изменены DNS-серверы на активных физических адаптерах."))
-            return;
-
-        var commandResult = _googleDnsCheckBox.Checked
-            ? await RunElevatedPowerShellAsync("$adapters = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {$_.Status -eq 'Up'}; if(-not $adapters){ exit 2 }; foreach($adapter in $adapters){ Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @('8.8.8.8','8.8.4.4') -ErrorAction Stop }")
-            : await RunElevatedPowerShellAsync("$adapters = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {$_.Status -eq 'Up'}; if(-not $adapters){ exit 2 }; foreach($adapter in $adapters){ Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ResetServerAddresses -ErrorAction Stop }");
-
-        if (commandResult == ElevatedCommandResult.Success)
-        {
-            LoadGoogleDnsState();
-            ShowStatus("Настройки DNS обновлены", Color.Green);
-            return;
-        }
-
-        if (commandResult == ElevatedCommandResult.Cancelled)
-        {
-            ShowStatus("Операция отменена", Color.Orange);
-            return;
-        }
-
-        ShowStatus("Не удалось изменить DNS-серверы", Color.Orange);
     }
 
     private async Task ApplyIpv6SettingAsync()
@@ -2024,7 +1913,6 @@ public partial class WindowsTweaksTab : UserControl
         if (commandResult == ElevatedCommandResult.Success)
         {
             ShowStatus("Сетевые адаптеры перезапущены", Color.Green);
-            LoadGoogleDnsState();
             await LoadIpv6StateAsync();
             return;
         }
@@ -2059,7 +1947,7 @@ public partial class WindowsTweaksTab : UserControl
             }
 
             key.SetValue("StartupBoostEnabled", targetValue, RegistryValueKind.DWord);
-            _edgeStateLabel.Text = $"Текущее значение StartupBoostEnabled: {targetValue}";
+            _edgeStateLabel.Text = targetValue == 0 ? "Состояние: ускоренный запуск отключён" : "Состояние: ускоренный запуск включён";
             _edgeStateLabel.ForeColor = Color.Gainsboro;
             ShowStatus("Настройка Edge Startup Boost применена", Color.Green);
         }

@@ -13,14 +13,14 @@ public partial class DotaVideoConfigTab : UserControl
     private static readonly VideoSettingDefinition[] SettingDefinitions =
     {
         new("setting.dota_portrait_animate", "false", "true", false, "Отключает анимацию портрета героя. Без галочки значение возвращается в true."),
-        new("setting.cpu_level", "3", "2", false, "При галочке ставит значение 3, без галочки возвращает 2."),
-        new("setting.mem_level", "3", "2", false, "При галочке ставит значение 3, без галочки возвращает 2."),
-        new("setting.gpu_mem_level", "3", "2", false, "При галочке ставит значение 3, без галочки возвращает 2."),
-        new("setting.fullscreen_min_on_focus_loss", "0", "1", false, "Для 2 и более мониторов: при галочке ставит 0, без галочки возвращает 1."),
-        new("setting.version.advanced_video", "1", null, true, "Добавляет строку расширенных видео-настроек в video.txt."),
-        new("setting.mindxlevel", "100", null, true, "Добавляет строку минимального DirectX level со значением 100."),
-        new("setting.maxdxlevel", "100", null, true, "Добавляет строку максимального DirectX level со значением 100."),
-        new("setting.dxlevel", "100", null, true, "Добавляет строку текущего DirectX level со значением 100.")
+        new("setting.cpu_level", "3", "2", false, "Внутренний уровень детализации Dota на стороне процессора (галочка — 3, без неё — 2). Продвинутая настройка video.txt."),
+        new("setting.mem_level", "3", "2", false, "Уровень использования оперативной памяти под ресурсы игры (галочка — 3, без неё — 2). Продвинутая настройка."),
+        new("setting.gpu_mem_level", "3", "2", false, "Уровень использования видеопамяти под текстуры (галочка — 3, без неё — 2). Продвинутая настройка."),
+        new("setting.fullscreen_min_on_focus_loss", "0", "1", false, "Для двух и более мониторов: галочка не даёт Dota сворачиваться, когда вы кликаете на другой монитор."),
+        new("setting.version.advanced_video", "1", null, true, "Включает раздел расширенных видео-настроек в video.txt — нужен, чтобы работали параметры DirectX ниже."),
+        new("setting.mindxlevel", "100", null, true, "Нижняя граница уровня DirectX (100 = DirectX 10). Форсирует графический путь рендеринга."),
+        new("setting.maxdxlevel", "100", null, true, "Верхняя граница уровня DirectX (100 = DirectX 10). Форсирует графический путь рендеринга."),
+        new("setting.dxlevel", "100", null, true, "Текущий уровень DirectX (100 = DirectX 10). Форсирует графический путь рендеринга; влияет на совместимость и производительность на старых видеокартах.")
     };
 
     private readonly Dota2Service _dota2Service;

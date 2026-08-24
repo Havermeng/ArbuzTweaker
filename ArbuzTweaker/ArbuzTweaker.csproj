@@ -7,9 +7,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\Arbuz.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     
     <AssemblyName>ArbuzTweaker</AssemblyName>
-    <Version>1.0.13</Version>
+    <Version>1.0.14</Version>
     <Authors>ArbuzTweaker</Authors>
     <Description>Твикер для игр и системы</Description>
   </PropertyGroup>

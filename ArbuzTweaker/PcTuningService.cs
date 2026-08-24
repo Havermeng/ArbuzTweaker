@@ -63,6 +63,12 @@ public sealed class PcTuningService
                 PcTuningAction.DevicePowerSaving => IsDevicePowerSavingDisabled(),
                 PcTuningAction.NetBios => IsNetBiosDisabled(),
                 PcTuningAction.NvidiaPState => IsNvidiaPStateDisabled(),
+                PcTuningAction.CompactOs => IsCompactOsEnabled(),
+                PcTuningAction.UltimatePlan => IsUltimatePlanActive(),
+                PcTuningAction.CoreUnpark => IsCoreUnparked(),
+                PcTuningAction.Nagle => IsNagleDisabled(),
+                PcTuningAction.NicOffloads => AreNicOffloadsDisabled(),
+                PcTuningAction.MaxCpuPerformance => IsMaxCpuPerformanceEnabled(),
                 _ => AreRegistryValuesApplied(tweak)
             };
         }
@@ -87,6 +93,18 @@ public sealed class PcTuningService
                     return await Task.Run(() => SetNetBios(enable));
                 case PcTuningAction.NvidiaPState:
                     return await Task.Run(() => SetNvidiaPState(enable));
+                case PcTuningAction.CompactOs:
+                    return await SetCompactOsAsync(enable);
+                case PcTuningAction.UltimatePlan:
+                    return await SetUltimatePlanAsync(enable);
+                case PcTuningAction.CoreUnpark:
+                    return await SetCoreUnparkAsync(enable);
+                case PcTuningAction.Nagle:
+                    return await Task.Run(() => SetNagle(enable));
+                case PcTuningAction.NicOffloads:
+                    return await Task.Run(() => SetNicOffloads(enable));
+                case PcTuningAction.MaxCpuPerformance:
+                    return await SetMaxCpuPerformanceAsync(enable);
                 default:
                     return await Task.Run(() => ApplyRegistryValues(tweak, enable));
             }
@@ -360,6 +378,345 @@ public sealed class PcTuningService
         }
 
         return result;
+    }
+
+    // ───────────── CompactOS ─────────────
+
+    private bool IsCompactOsEnabled()
+    {
+        var output = RunProcessOutput("compact.exe", "/compactos:query")?.ToLowerInvariant();
+        if (string.IsNullOrEmpty(output))
+            return false;
+
+        // Явно выключено — англ. формулировка; иначе считаем включённым только при явном признаке.
+        if (output.Contains("not in the compact"))
+            return false;
+
+        return output.Contains("in the compact state");
+    }
+
+    private async Task<bool> SetCompactOsAsync(bool enable)
+    {
+        return await RunProcessAsync("compact.exe", enable ? "/compactos:always" : "/compactos:never");
+    }
+
+    // ───────────── План питания «Максимальная производительность» ─────────────
+
+    private const string BalancedSchemeGuid = "381b4222-f694-41f0-9685-ff5bb260df2e";
+    private const string UltimateTemplateGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61";
+    private static readonly string[] UltimateSchemeNames = { "ultimate", "максимальная производительность" };
+
+    private static string? GetActiveSchemeGuid()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes", false);
+        return key?.GetValue("ActivePowerScheme") as string;
+    }
+
+    private string? GetUltimateSchemeGuid()
+    {
+        var output = RunProcessOutput("powercfg.exe", "/list");
+        if (output == null)
+            return null;
+
+        foreach (var line in output.Split('\n'))
+        {
+            var lower = line.ToLowerInvariant();
+            if (!UltimateSchemeNames.Any(lower.Contains))
+                continue;
+
+            var match = System.Text.RegularExpressions.Regex.Match(
+                line, "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+            if (match.Success)
+                return match.Value;
+        }
+
+        return null;
+    }
+
+    private bool IsUltimatePlanActive()
+    {
+        var active = GetActiveSchemeGuid();
+        var ultimate = GetUltimateSchemeGuid();
+        return active != null && ultimate != null && string.Equals(active, ultimate, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> SetUltimatePlanAsync(bool enable)
+    {
+        if (!enable)
+            return await RunProcessAsync("powercfg.exe", "/setactive " + BalancedSchemeGuid);
+
+        var guid = GetUltimateSchemeGuid();
+        if (guid == null)
+        {
+            await RunProcessAsync("powercfg.exe", "-duplicatescheme " + UltimateTemplateGuid);
+            guid = GetUltimateSchemeGuid();
+        }
+
+        if (guid == null)
+            return false;
+
+        return await RunProcessAsync("powercfg.exe", "/setactive " + guid);
+    }
+
+    // ───────────── Распарковка ядер ─────────────
+
+    private const string ProcessorSubGroupGuid = "54533251-82be-4824-96c1-47b60b740d00";
+    private const string CoreParkingMinSetting = "0cc5b647-c1df-4637-891a-dec35c318583"; // CPMINCORES
+
+    private bool IsCoreUnparked()
+    {
+        try
+        {
+            var active = GetActiveSchemeGuid();
+            if (active == null)
+                return false;
+
+            var path = $@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\{active}\{ProcessorSubGroupGuid}\{CoreParkingMinSetting}";
+            using var key = Registry.LocalMachine.OpenSubKey(path, false);
+            return key?.GetValue("ACSettingIndex") is int index && index == 100;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> SetCoreUnparkAsync(bool enable)
+    {
+        // 100 = все ядра всегда активны; 10 = вернуть парковку (значение по умолчанию у разных ПК разное,
+        // точный откат делает кнопка бэкапа реестра).
+        var value = enable ? "100" : "10";
+        var ok = await RunProcessAsync("powercfg.exe", $"-setacvalueindex scheme_current sub_processor {CoreParkingMinSetting} {value}");
+        ok &= await RunProcessAsync("powercfg.exe", $"-setdcvalueindex scheme_current sub_processor {CoreParkingMinSetting} {value}");
+        ok &= await RunProcessAsync("powercfg.exe", "-setactive scheme_current");
+        return ok;
+    }
+
+    // ───────────── Максимальная частота процессора ─────────────
+
+    private const string ProcThrottleMinSetting = "893dee8e-2bef-41e0-89c6-b55d0929964c"; // PROCTHROTTLEMIN
+    private const string PerfBoostModeSetting = "be337238-0d82-4146-a960-4f3749d470c7";   // PERFBOOSTMODE
+
+    private bool IsMaxCpuPerformanceEnabled()
+    {
+        try
+        {
+            var active = GetActiveSchemeGuid();
+            if (active == null)
+                return false;
+
+            var path = $@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\{active}\{ProcessorSubGroupGuid}\{ProcThrottleMinSetting}";
+            using var key = Registry.LocalMachine.OpenSubKey(path, false);
+            return key?.GetValue("ACSettingIndex") is int index && index == 100;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> SetMaxCpuPerformanceAsync(bool enable)
+    {
+        // 100 = процессор всегда на полной частоте; 5 = обычный минимум по умолчанию
+        // (точное исходное значение у разных ПК своё, полный откат — через бэкап реестра).
+        var minState = enable ? "100" : "5";
+        var ok = await RunProcessAsync("powercfg.exe", $"-setacvalueindex scheme_current sub_processor {ProcThrottleMinSetting} {minState}");
+        ok &= await RunProcessAsync("powercfg.exe", $"-setdcvalueindex scheme_current sub_processor {ProcThrottleMinSetting} {minState}");
+        // Режим ускорения «Агрессивный» (2) — штатное значение Windows, ставим и при откате.
+        ok &= await RunProcessAsync("powercfg.exe", $"-setacvalueindex scheme_current sub_processor {PerfBoostModeSetting} 2");
+        ok &= await RunProcessAsync("powercfg.exe", $"-setdcvalueindex scheme_current sub_processor {PerfBoostModeSetting} 2");
+        ok &= await RunProcessAsync("powercfg.exe", "-setactive scheme_current");
+        return ok;
+    }
+
+    // ───────────── Алгоритм Нагла ─────────────
+
+    private const string TcpipInterfacesKeyPath = @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces";
+
+    private static bool IsNagleDisabled()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(TcpipInterfacesKeyPath, false);
+        var names = key?.GetSubKeyNames();
+        if (names == null || names.Length == 0)
+            return false;
+
+        foreach (var name in names)
+        {
+            using var sub = key!.OpenSubKey(name, false);
+            if (sub?.GetValue("TcpAckFrequency") is not int frequency || frequency != 1)
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool SetNagle(bool disable)
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(TcpipInterfacesKeyPath, true);
+        if (key == null)
+            return false;
+
+        var failed = false;
+        foreach (var name in key.GetSubKeyNames())
+        {
+            try
+            {
+                var interfacePath = TcpipInterfacesKeyPath + "\\" + name;
+                _backupService?.CaptureValue(BackupGroup, "HKLM", interfacePath, "TcpAckFrequency");
+                _backupService?.CaptureValue(BackupGroup, "HKLM", interfacePath, "TCPNoDelay");
+
+                using var sub = key.OpenSubKey(name, true);
+                if (sub == null)
+                    continue;
+
+                if (disable)
+                {
+                    sub.SetValue("TcpAckFrequency", 1, RegistryValueKind.DWord);
+                    sub.SetValue("TCPNoDelay", 1, RegistryValueKind.DWord);
+                }
+                else
+                {
+                    if (sub.GetValue("TcpAckFrequency") != null)
+                        sub.DeleteValue("TcpAckFrequency", false);
+                    if (sub.GetValue("TCPNoDelay") != null)
+                        sub.DeleteValue("TCPNoDelay", false);
+                }
+            }
+            catch (Exception ex)
+            {
+                failed = true;
+                _logService?.Error($"Failed to set Nagle for {name}", ex);
+            }
+        }
+
+        return !failed;
+    }
+
+    // ───────────── Энергосбережение сетевых адаптеров ─────────────
+
+    private const string NetClassKeyPath = @"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";
+
+    // Имя параметра → значение «включено» (для отката). Значения — строки (REG_SZ).
+    private static readonly (string Name, string OnValue)[] NicOffloadValues =
+    {
+        ("*EEE", "1"),
+        ("EnableGreenEthernet", "1"),
+        ("*FlowControl", "3"),
+        ("*InterruptModeration", "1")
+    };
+
+    private static List<string> GetNicAdapterKeys()
+    {
+        var result = new List<string>();
+        using var classKey = Registry.LocalMachine.OpenSubKey(NetClassKeyPath, false);
+        if (classKey == null)
+            return result;
+
+        foreach (var name in classKey.GetSubKeyNames())
+        {
+            if (name.Length != 4 || !name.All(char.IsDigit))
+                continue;
+
+            using var sub = classKey.OpenSubKey(name, false);
+            if (sub == null)
+                continue;
+
+            // Только адаптеры, у которых реально есть хотя бы один из этих параметров.
+            if (NicOffloadValues.Any(value => sub.GetValue(value.Name) != null))
+                result.Add(NetClassKeyPath + "\\" + name);
+        }
+
+        return result;
+    }
+
+    private static bool AreNicOffloadsDisabled()
+    {
+        var keys = GetNicAdapterKeys();
+        if (keys.Count == 0)
+            return false;
+
+        foreach (var keyPath in keys)
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(keyPath, false);
+            if (key == null)
+                continue;
+
+            foreach (var (name, _) in NicOffloadValues)
+            {
+                if (key.GetValue(name) is string value && value != "0")
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool SetNicOffloads(bool disable)
+    {
+        var keys = GetNicAdapterKeys();
+        if (keys.Count == 0)
+            return false;
+
+        var failed = false;
+        foreach (var keyPath in keys)
+        {
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(keyPath, true);
+                if (key == null)
+                    continue;
+
+                foreach (var (name, onValue) in NicOffloadValues)
+                {
+                    if (key.GetValue(name) == null)
+                        continue; // не создаём отсутствующие параметры
+
+                    _backupService?.CaptureValue(BackupGroup, "HKLM", keyPath, name);
+                    key.SetValue(name, disable ? "0" : onValue, RegistryValueKind.String);
+                }
+            }
+            catch (Exception ex)
+            {
+                failed = true;
+                _logService?.Error($"Failed to set NIC offloads for {keyPath}", ex);
+            }
+        }
+
+        return !failed;
+    }
+
+    private string? RunProcessOutput(string fileName, string arguments)
+    {
+        try
+        {
+            using var process = new Process();
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            process.Start();
+            var output = process.StandardOutput.ReadToEnd();
+            process.StandardError.ReadToEnd();
+
+            if (!process.WaitForExit(ProcessTimeoutMilliseconds))
+            {
+                TryKill(process);
+                return null;
+            }
+
+            return output;
+        }
+        catch (Exception ex)
+        {
+            _logService?.Error($"Failed to run {fileName}", ex);
+            return null;
+        }
     }
 
     // ───────────── Запуск процессов ─────────────
