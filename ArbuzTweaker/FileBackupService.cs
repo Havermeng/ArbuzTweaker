@@ -131,13 +131,44 @@ public sealed class FileBackupService
         }
     }
 
+    // Сколько копий ОДНОГО файла держим. Раньше каждое «Применить» оставляло новый .bak
+    // навсегда, и папка бэкапов росла без предела.
+    private const int MaxBackupsPerFile = 10;
+
     private void AddManifestEntry(FileBackupEntry entry)
     {
         lock (_manifestLock)
         {
             var entries = LoadManifest().ToList();
             entries.Add(entry);
+            PruneOldBackups(entries, entry.Category, entry.OriginalPath);
             SaveManifest(entries);
+        }
+    }
+
+    // Удаляет самые старые копии этого же файла сверх лимита — и с диска, и из манифеста.
+    private void PruneOldBackups(List<FileBackupEntry> entries, string category, string originalPath)
+    {
+        var stale = entries
+            .Where(e => string.Equals(e.Category, category, StringComparison.OrdinalIgnoreCase)
+                     && string.Equals(e.OriginalPath, originalPath, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(e => e.CreatedAt)
+            .Skip(MaxBackupsPerFile)
+            .ToList();
+
+        foreach (var old in stale)
+        {
+            try
+            {
+                if (File.Exists(old.BackupPath))
+                    File.Delete(old.BackupPath);
+            }
+            catch (Exception ex)
+            {
+                _logService.Error($"Failed to delete old backup: {old.BackupPath}", ex);
+            }
+
+            entries.Remove(old);
         }
     }
 

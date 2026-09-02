@@ -5,6 +5,11 @@ namespace ArbuzTweaker;
 
 public sealed class AppLogService
 {
+    // Лог раньше только дописывался и рос без предела. Теперь при превышении размера
+    // текущий файл уходит в arbuz-tweaker.1.log, тот — в .2.log, самый старый удаляется.
+    private const long MaxLogBytes = 1024 * 1024;
+    private const int ArchivedLogCount = 2;
+
     private readonly object _syncRoot = new();
     private readonly string _logDirectory;
 
@@ -36,11 +41,44 @@ public sealed class AppLogService
 
             lock (_syncRoot)
             {
+                RotateIfNeeded();
                 File.AppendAllText(LogFilePath, line);
             }
         }
         catch
         {
         }
+    }
+
+    private void RotateIfNeeded()
+    {
+        try
+        {
+            var current = new FileInfo(LogFilePath);
+            if (!current.Exists || current.Length < MaxLogBytes)
+                return;
+
+            var oldest = ArchivePath(ArchivedLogCount);
+            if (File.Exists(oldest))
+                File.Delete(oldest);
+
+            for (var index = ArchivedLogCount - 1; index >= 1; index--)
+            {
+                var from = ArchivePath(index);
+                if (File.Exists(from))
+                    File.Move(from, ArchivePath(index + 1), true);
+            }
+
+            File.Move(LogFilePath, ArchivePath(1), true);
+        }
+        catch
+        {
+            // Если ротация не удалась, просто продолжаем писать в текущий файл.
+        }
+    }
+
+    private string ArchivePath(int index)
+    {
+        return Path.Combine(_logDirectory, $"arbuz-tweaker.{index}.log");
     }
 }

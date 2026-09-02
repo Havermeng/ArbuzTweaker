@@ -18,6 +18,22 @@
     <Icon Id="ArbuzIcon" SourceFile="$(var.RepoRoot)\ArbuzTweaker\Assets\Arbuz.ico" />
     <Property Id="ARPPRODUCTICON" Value="ArbuzIcon" />
 
+    <!-- При ПОЛНОМ удалении убираем то, что MSI сам не трогает: задачи планировщика,
+         их скрипты в Roaming и мусор Updates/Logs. Настройки и бэкапы остаются.
+         Impersonate=yes — чтобы %APPDATA% и задачи были того пользователя, а не SYSTEM.
+         NOT UPGRADINGPRODUCTCODE — при обновлении старая версия удаляется, но чистить нельзя. -->
+    <CustomAction
+      Id="CleanupUserData"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;[INSTALLFOLDER]Uninstall-Cleanup.ps1&quot;"
+      Execute="deferred"
+      Impersonate="yes"
+      Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="CleanupUserData" Before="RemoveFiles" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
         <Feature Id="MainFeature" Title="ArbuzTweaker" Level="1">
           <ComponentGroupRef Id="ApplicationFiles" />
           <ComponentRef Id="StartMenuShortcutComponent" />

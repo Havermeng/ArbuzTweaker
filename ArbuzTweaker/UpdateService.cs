@@ -18,6 +18,11 @@ public class UpdateService
     public const string ChecksumsAssetName = "SHA256SUMS.txt";
     private static readonly TimeSpan UpdateCheckTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(10);
+    // Скачанный установщик, скрипт и лог остаются в Updates после обновления; всё, что старше
+    // этого срока, считаем мусором. Свежая, ещё не установленная загрузка не трогается.
+    private static readonly TimeSpan StaleDownloadAge = TimeSpan.FromDays(3);
+    private const string UpdateScriptName = "Install-ArbuzTweaker-Update.ps1";
+    private const string UpdateLogName = "install-update.log";
 
     private readonly string _currentVersion;
     private readonly string _downloadPath;
@@ -139,6 +144,36 @@ public class UpdateService
         catch
         {
             return UpdateLaunchResult.Failure("Не удалось запустить обновление.");
+        }
+    }
+
+    /// <summary>
+    /// Убирает хвосты прошлых обновлений из папки Updates: установщик (~40 МБ), скрипт и
+    /// verbose-лог msiexec (~1.4 МБ) раньше оставались там навсегда. Вызывается при старте.
+    /// </summary>
+    public void CleanupStaleDownloads()
+    {
+        try
+        {
+            if (!Directory.Exists(_downloadPath))
+                return;
+
+            var cutoff = DateTime.Now - StaleDownloadAge;
+            foreach (var file in Directory.EnumerateFiles(_downloadPath))
+            {
+                var name = Path.GetFileName(file);
+                var isUpdateArtifact = name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
+                    || name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals(UpdateScriptName, StringComparison.OrdinalIgnoreCase)
+                    || name.Equals(UpdateLogName, StringComparison.OrdinalIgnoreCase);
+
+                if (isUpdateArtifact && File.GetLastWriteTime(file) < cutoff)
+                    File.Delete(file);
+            }
+        }
+        catch
+        {
+            // Уборка не должна мешать запуску приложения.
         }
     }
 
@@ -357,8 +392,8 @@ public class UpdateService
     {
         Directory.CreateDirectory(_downloadPath);
 
-        var scriptPath = Path.Combine(_downloadPath, "Install-ArbuzTweaker-Update.ps1");
-        var logPath = Path.Combine(_downloadPath, "install-update.log");
+        var scriptPath = Path.Combine(_downloadPath, UpdateScriptName);
+        var logPath = Path.Combine(_downloadPath, UpdateLogName);
         var script = string.Join(Environment.NewLine, new[]
         {
             "$ErrorActionPreference = 'Continue'",
@@ -384,6 +419,10 @@ public class UpdateService
             "        Start-Sleep -Seconds 1",
             "    }",
             "    if (Test-Path -LiteralPath $app) { Start-Process -FilePath $app }",
+            "    # Успех: установщик, verbose-лог и сам скрипт больше не нужны — иначе копятся в Updates.",
+            "    Remove-Item -LiteralPath $msi -Force -ErrorAction SilentlyContinue",
+            "    Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue",
+            "    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue",
             "} else {",
             "    Start-Process -FilePath 'explorer.exe' -ArgumentList ('/select,\"' + $msi + '\"')",
             "}",

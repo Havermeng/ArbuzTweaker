@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     
     <AssemblyName>ArbuzTweaker</AssemblyName>
-    <Version>1.0.15</Version>
+    <Version>1.0.16</Version>
     <Authors>ArbuzTweaker</Authors>
     <Description>Твикер для игр и системы</Description>
   </PropertyGroup>
@@ -21,6 +21,10 @@
 
   <ItemGroup>
     <Content Include="Assets\Arbuz.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Скрипт уборки при удалении: попадает в publish, оттуда MSI кладёт его в папку установки. -->
+    <Content Include="Uninstall-Cleanup.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

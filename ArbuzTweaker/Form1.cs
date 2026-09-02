@@ -42,6 +42,8 @@ public partial class Form1 : Form
 
         _appVersion = GetType().Assembly.GetName().Version?.ToString() ?? "1.0.0";
         _updateService = new UpdateService(_appVersion);
+        // Хвосты прошлых обновлений (установщик ~40 МБ, скрипт, verbose-лог) раньше жили в Updates вечно.
+        _updateService.CleanupStaleDownloads();
         var initialSteamAccountId = _appSettingsService.Load().PreferredSteamAccountId32;
         _dota2Service = new Dota2Service(_fileBackupService, _logService);
         _dota2Service.PreferredSteamAccountId32 = initialSteamAccountId;
